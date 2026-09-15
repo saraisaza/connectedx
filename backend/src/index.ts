@@ -383,7 +383,9 @@ app.post('/api/rooms/:roomId/reauth', async (c) => {
     { roomId: destino.id, userId: user.id, nombre: user.nombre },
     SESSION_TOKEN_TTL_SECONDS
   )
-  return c.json({ roomId: destino.id, nombre: destino.nombre, tipo: destino.tipo, userId: user.id, token })
+  // La sala va en `room`, no en un `nombre` suelto: en /register, `nombre` es
+  // el de la persona, y mezclarlos ya confundió a un consumidor de esta API.
+  return c.json({ roomId: destino.id, room: { id: destino.id, nombre: destino.nombre, tipo: destino.tipo }, userId: user.id, token })
 })
 
 // Semana 4, paso 2 del protocolo de transferencia: cambiar la credencial de
@@ -410,7 +412,8 @@ app.post('/api/rooms/:roomId/entrada', async (c) => {
     { roomId: dest.id, userId: credential.userId, nombre: credential.nombre, moveId },
     SESSION_TOKEN_TTL_SECONDS
   )
-  return c.json({ roomId: dest.id, nombre: dest.nombre, tipo: dest.tipo, token })
+  // Misma forma que /reauth: la sala va en `room`.
+  return c.json({ roomId: dest.id, room: { id: dest.id, nombre: dest.nombre, tipo: dest.tipo }, token })
 })
 
 app.get('/api/rooms/:roomId/participants', async (c) => {

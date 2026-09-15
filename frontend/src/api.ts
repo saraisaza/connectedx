@@ -67,11 +67,11 @@ export async function registerForRoom(roomId: string, params: RegisterParams): P
 }
 
 // Token de sesión para una sala concreta del grupo, con lo que hace falta
-// mostrar de esa sala.
+// mostrar de esa sala. La sala viene en `room`: el `nombre` suelto de
+// /register es el de la persona.
 export interface RoomToken {
   roomId: string
-  nombre: string
-  tipo: 'principal' | 'subsala'
+  room: { id: string; nombre: string; tipo: 'principal' | 'subsala' }
   token: string
 }
 
