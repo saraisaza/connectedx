@@ -71,6 +71,11 @@ SIMULCAST_HIGH_MAX_BITRATE_BPS = "1500000"
 # rápida con la fila de attendance anterior en vez de duplicarla.
 SCREEN_SHARE_MAX_BITRATE_BPS = "2500000"
 ATTENDANCE_GRACE_WINDOW_MS = "90000"
+# Semana 4 (subsalas): máximo de subsalas activas por sala principal (no cuentan
+# contra MAX_ACTIVE_ROOMS), y cada cuánto cada Durable Object con gente adentro
+# reconcilia su presencia contra D1 (ver roomSession.ts, alarm()).
+MAX_SUBSALAS_PER_ROOM = "20"
+RECONCILE_INTERVAL_MS = "60000"
 
 [dev]
 port = 8787

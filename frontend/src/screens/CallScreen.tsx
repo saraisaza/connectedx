@@ -1,11 +1,13 @@
-import { useMemo, useState } from 'react'
-import type { RoomInfo } from '../api'
+import { useMemo, useState, type CSSProperties } from 'react'
+import type { GroupRoom, RoomInfo } from '../api'
+import type { RoomDescriptor } from '../sfu'
 import { ControlButton } from '../components/ControlButton'
 import { GridPagination } from '../components/GridPagination'
 import { LiveBadge } from '../components/LiveBadge'
 import { Logo } from '../components/Logo'
+import { SubsalasPanel } from '../components/SubsalasPanel'
 import { getInitials, VideoTile } from '../components/VideoTile'
-import { colors, fonts, radii, spacing } from '../theme'
+import { alpha, colors, fonts, radii, spacing } from '../theme'
 
 export interface RemoteParticipant {
   nombre: string
@@ -44,6 +46,21 @@ export interface CallScreenProps {
   onStartScreenShare: () => void
   onStopScreenShare: () => void
   connectionStatus: 'connected' | 'reconnecting'
+  // Semana 4 (subsalas)
+  groupRoomId: string
+  currentRoom: RoomDescriptor | null
+  groupRooms: GroupRoom[]
+  subsalasMax: number
+  isHost: boolean
+  subsalasOpen: boolean
+  onToggleSubsalas: () => void
+  onEnterRoom: (roomId: string) => void
+  onCreateSubsalas: (cantidad: number) => void
+  onCloseRoom: (roomId: string) => void
+  onEndMeeting: () => void
+  moving: { nombre: string } | null
+  notice: string | null
+  hostActionPending: boolean
 }
 
 function formatElapsed(totalSeconds: number): string {
@@ -77,6 +94,26 @@ function HandBadge() {
   )
 }
 
+// Píldora flotante sobre el grid (reconexión, avisos).
+const bannerStyle: CSSProperties = {
+  position: 'absolute',
+  top: spacing.md,
+  left: '50%',
+  transform: 'translateX(-50%)',
+  zIndex: 10,
+  display: 'flex',
+  alignItems: 'center',
+  gap: spacing.sm,
+  maxWidth: 'calc(100% - 48px)',
+  padding: '10px 20px',
+  borderRadius: radii.pill,
+  background: colors.surfaceRaised,
+  font: `500 12px ${fonts.mono}`,
+  letterSpacing: '.08em',
+  textTransform: 'uppercase',
+  textAlign: 'center',
+}
+
 export function CallScreen(props: CallScreenProps) {
   const {
     roomInfo,
@@ -104,6 +141,20 @@ export function CallScreen(props: CallScreenProps) {
     onStartScreenShare,
     onStopScreenShare,
     connectionStatus,
+    groupRoomId,
+    currentRoom,
+    groupRooms,
+    subsalasMax,
+    isHost,
+    subsalasOpen,
+    onToggleSubsalas,
+    onEnterRoom,
+    onCreateSubsalas,
+    onCloseRoom,
+    onEndMeeting,
+    moving,
+    notice,
+    hostActionPending,
   } = props
   const [copied, setCopied] = useState(false)
   const sharerNombre = screenShare
@@ -113,6 +164,9 @@ export function CallScreen(props: CallScreenProps) {
     : ''
 
   const columns = useMemo(() => gridColumns(visibleConnectionIds.length || 1), [visibleConnectionIds.length])
+  const subsalasCount = groupRooms.filter((r) => r.tipo === 'subsala').length
+  const enSubsala = currentRoom?.tipo === 'subsala'
+  const busy = moving !== null || connectionStatus === 'reconnecting'
 
   async function handleInvite() {
     try {
@@ -134,18 +188,54 @@ export function CallScreen(props: CallScreenProps) {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
+          gap: spacing.xxl,
           padding: `0 ${spacing.xhuge}px`,
           background: colors.surfaceRaised,
           borderBottom: `1px solid ${colors.border}`,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: spacing.xxl }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: spacing.xxl, minWidth: 0 }}>
           <Logo height={44} />
           <div style={{ width: 1, height: 26, background: '#2C2C33' }} />
-          <div style={{ fontSize: 15, fontWeight: 500, color: colors.textPrimary }}>{roomInfo?.nombre ?? ''}</div>
+          <div style={{ fontSize: 15, fontWeight: 500, color: colors.textPrimary, whiteSpace: 'nowrap' }}>{roomInfo?.nombre ?? ''}</div>
+          {enSubsala && currentRoom && (
+            <span
+              style={{
+                font: `500 11px ${fonts.mono}`,
+                letterSpacing: '.14em',
+                textTransform: 'uppercase',
+                color: colors.ink,
+                background: colors.yellow,
+                borderRadius: radii.pill,
+                padding: '6px 12px',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {currentRoom.nombre}
+            </span>
+          )}
           <LiveBadge variant="live" label={`En vivo ${formatElapsed(elapsedSeconds)}`} />
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: spacing.xxl }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: spacing.lg }}>
+          {enSubsala && (
+            <ControlButton
+              variant="primary"
+              label="Volver a la principal"
+              height={40}
+              paddingX={16}
+              disabled={busy}
+              onClick={() => onEnterRoom(groupRoomId)}
+            />
+          )}
+          {(isHost || subsalasCount > 0) && (
+            <ControlButton
+              variant="ghost"
+              label={subsalasCount > 0 ? `Subsalas (${subsalasCount})` : 'Subsalas'}
+              height={40}
+              paddingX={16}
+              onClick={onToggleSubsalas}
+            />
+          )}
           <GridPagination
             currentPage={currentPage}
             totalPages={totalPages}
@@ -167,29 +257,16 @@ export function CallScreen(props: CallScreenProps) {
           backgroundImage: 'repeating-linear-gradient(115deg, rgba(255,194,32,.04) 0 2px, transparent 2px 18px)',
         }}
       >
-        {connectionStatus === 'reconnecting' && (
-          <div
-            style={{
-              position: 'absolute',
-              top: spacing.md,
-              left: '50%',
-              transform: 'translateX(-50%)',
-              zIndex: 10,
-              display: 'flex',
-              alignItems: 'center',
-              gap: spacing.sm,
-              padding: '10px 20px',
-              borderRadius: radii.pill,
-              background: colors.surfaceRaised,
-              border: `1px solid ${colors.yellow}`,
-              font: `500 12px ${fonts.mono}`,
-              letterSpacing: '.08em',
-              textTransform: 'uppercase',
-              color: colors.yellow,
-            }}
-          >
+        {connectionStatus === 'reconnecting' ? (
+          <div role="status" style={{ ...bannerStyle, border: `1px solid ${colors.yellow}`, color: colors.yellow }}>
             Reconectando…
           </div>
+        ) : (
+          notice && (
+            <div role="status" style={{ ...bannerStyle, border: `1px solid ${colors.borderSoft}`, color: colors.textBody }}>
+              {notice}
+            </div>
+          )
         )}
 
         {screenShare ? (
@@ -275,7 +352,7 @@ export function CallScreen(props: CallScreenProps) {
               color: colors.textFaint,
             }}
           >
-            Esperando a que se unan más personas
+            {enSubsala ? 'Todavía no hay nadie más en esta subsala' : 'Esperando a que se unan más personas'}
           </div>
         )}
 
@@ -293,6 +370,49 @@ export function CallScreen(props: CallScreenProps) {
             bottomLeft={<span style={{ fontSize: 13, fontWeight: 500, color: colors.textBody }}>Tú</span>}
           />
         </div>
+
+        {subsalasOpen && (
+          <SubsalasPanel
+            rooms={groupRooms}
+            currentRoomId={currentRoom?.id ?? null}
+            isHost={isHost}
+            max={subsalasMax}
+            busy={busy}
+            hostActionPending={hostActionPending}
+            onEnter={onEnterRoom}
+            onCreate={onCreateSubsalas}
+            onClose={onCloseRoom}
+            onEndMeeting={onEndMeeting}
+            onDismiss={onToggleSubsalas}
+          />
+        )}
+
+        {/* Semana 4: mientras dura el cambio de sala, el grid de la sala
+            anterior queda atenuado debajo de este aviso. */}
+        {moving && (
+          <div
+            role="status"
+            aria-live="polite"
+            style={{
+              position: 'absolute',
+              inset: 0,
+              zIndex: 30,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: spacing.md,
+              background: alpha.overlayBg,
+            }}
+          >
+            <span style={{ font: `500 11px ${fonts.mono}`, letterSpacing: '.18em', textTransform: 'uppercase', color: colors.yellow }}>
+              Cambiando de sala
+            </span>
+            <span style={{ font: `400 40px ${fonts.display}`, textTransform: 'uppercase', color: colors.textHeading, textAlign: 'center' }}>
+              Entrando a {moving.nombre}…
+            </span>
+          </div>
+        )}
       </div>
 
       <div
@@ -316,7 +436,7 @@ export function CallScreen(props: CallScreenProps) {
           paddingX={22}
           label={isSharingScreen ? 'Compartiendo' : 'Compartir'}
           onClick={isSharingScreen ? onStopScreenShare : onStartScreenShare}
-          disabled={!isSharingScreen && screenShare !== null}
+          disabled={(!isSharingScreen && screenShare !== null) || moving !== null}
           title={!isSharingScreen && screenShare !== null ? `${sharerNombre} ya está compartiendo pantalla` : undefined}
         />
         <ControlButton variant="toggle" active={handRaised} height={50} paddingX={22} label="Mano" onClick={onToggleHand} />

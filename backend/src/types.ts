@@ -44,6 +44,14 @@ export interface Env {
   // attendance que dejó abierta la desconexión anterior, en vez de crear una nueva.
   ATTENDANCE_GRACE_WINDOW_MS: string
 
+  // --- Subsalas (Semana 4) ---
+  // Máximo de subsalas activas por sala principal. Las subsalas no cuentan
+  // contra MAX_ACTIVE_ROOMS.
+  MAX_SUBSALAS_PER_ROOM: string
+  // Cada cuánto reconcilia un Durable Object con gente adentro su presencia
+  // contra D1: conexiones fantasma, asistencia huérfana y cierre de la sala.
+  RECONCILE_INTERVAL_MS: string
+
   // --- Registro previo (Semana 2) ---
   // Secreto usado para firmar la credencial de sesión de /register (HMAC,
   // ver session.ts). SIEMPRE como secret (wrangler secret put), nunca en

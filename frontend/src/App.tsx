@@ -1,6 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { fetchRoom, reauthForRoom, registerForRoom, type RoomInfo } from './api'
-import { SFUClient, type SFUCallbacks } from './sfu'
+import {
+  ApiError,
+  closeRoomAsHost,
+  createSubsalas,
+  fetchGroupRooms,
+  fetchRoom,
+  reauthForGroup,
+  registerForRoom,
+  requestEntrada,
+  type GroupRoom,
+  type RoomInfo,
+} from './api'
+import { SFUClient, type RoomDescriptor, type SFUCallbacks } from './sfu'
 import { parseRoomIdFromPath } from './router'
 import { StatusScreen } from './screens/StatusScreen'
 import { PreJoinScreen } from './screens/PreJoinScreen'
@@ -9,7 +20,7 @@ import { usePagedGallery } from './usePagedGallery'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
-type Screen = 'loading' | 'not-found' | 'closed' | 'form' | 'call'
+type Screen = 'loading' | 'not-found' | 'closed' | 'form' | 'call' | 'subsala-link' | 'superseded'
 type Permission = 'pending' | 'granted' | 'denied' | 'no-device'
 type ConnectionStatus = 'connected' | 'reconnecting'
 
@@ -25,8 +36,55 @@ function reconnectBackoffMs(attempt: number): number {
   return Math.max(500, Math.round(base + jitter))
 }
 
+// Semana 4: cada cuánto se refresca la lista de subsalas mientras el panel
+// está abierto (además de los avisos del servidor al crear o cerrar una).
+const GROUP_ROOMS_REFRESH_MS = 5000
+
+// Semana 4: la llave de host llega una sola vez, en el fragmento del link que
+// devuelve POST /api/rooms (#host=...). Se guarda por sala en sessionStorage y
+// se saca de la barra de direcciones, así el botón "Invitar" (que copia la
+// URL) nunca la reparte.
+function readHostKey(roomId: string | null): string | null {
+  if (!roomId) return null
+  const storageKey = `meets:host:${roomId}`
+  const match = window.location.hash.match(/(?:^#|&)host=([^&]+)/)
+  if (match) {
+    const key = decodeURIComponent(match[1])
+    try {
+      sessionStorage.setItem(storageKey, key)
+    } catch {
+      // Sin storage disponible la llave vive solo en memoria mientras dure la pestaña.
+    }
+    window.history.replaceState(null, '', window.location.pathname + window.location.search)
+    return key
+  }
+  try {
+    return sessionStorage.getItem(storageKey)
+  } catch {
+    return null
+  }
+}
+
+// Semana 4: mensajes para la persona en vez de los códigos internos que
+// devuelve el backend.
+function mensajeDeError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err)
+  if (/^sfu_(request|publish|subscribe)_failed$/.test(raw)) {
+    return 'No pudimos conectar con el servidor de video. Volvé a intentar en unos segundos.'
+  }
+  if (raw === 'no_sfu_session' || raw === 'connection_secret_invalido') return 'Se perdió la conexión con la sala. Volvé a intentar.'
+  if (raw === 'No se pudo abrir el WebSocket de señalización') {
+    return 'No pudimos conectarnos a la sala. Revisá tu conexión y volvé a intentar.'
+  }
+  if (raw === 'Failed to fetch' || raw === 'Load failed') return 'No hay conexión con el servidor. Revisá tu internet y volvé a intentar.'
+  return raw
+}
+
 export default function App() {
+  // `roomId` es la sala del link: siempre la principal de la reunión. Semana 4:
+  // la sala donde está la persona en este momento es `currentRoom`.
   const [roomId] = useState(() => parseRoomIdFromPath(window.location.pathname))
+  const [hostKey] = useState(() => readHostKey(roomId))
   const [screen, setScreen] = useState<Screen>('loading')
   const [roomInfo, setRoomInfo] = useState<RoomInfo | null>(null)
 
@@ -72,6 +130,18 @@ export default function App() {
   // video a re-suscribirse desde cero contra el cliente nuevo (ver abajo).
   const [reconnectTick, setReconnectTick] = useState(0)
 
+  // Semana 4 (subsalas)
+  const [currentRoom, setCurrentRoom] = useState<RoomDescriptor | null>(null)
+  const [groupRooms, setGroupRooms] = useState<GroupRoom[]>([])
+  const [subsalasMax, setSubsalasMax] = useState(20)
+  // Solo true si el servidor confirmó la llave de host (ver refreshGroupRooms).
+  const [isHost, setIsHost] = useState(false)
+  const [subsalasOpen, setSubsalasOpen] = useState(false)
+  const [moving, setMoving] = useState<{ nombre: string } | null>(null)
+  // Aviso breve dentro de la llamada (errores, "el host cerró esta subsala").
+  const [notice, setNotice] = useState<string | null>(null)
+  const [hostActionPending, setHostActionPending] = useState(false)
+
   const sfuRef = useRef<SFUClient | null>(null)
   // connectionId de video ya suscrito o pedido (Parte B): fuente de verdad
   // para el efecto de diff de abajo, no para renderizar nada.
@@ -102,6 +172,9 @@ export default function App() {
   // el tiempo (los setters de useState sí son siempre estables, esto es
   // solo para VALORES).
   const userIdRef = useRef<string | null>(null)
+  // Semana 4: credencial de grupo del registro. Con ella se entra a otras salas
+  // de la reunión y se renueva la sesión al reconectar.
+  const credencialRef = useRef<string | null>(null)
   const myConnectionIdRef = useRef<string | null>(null)
   const localStreamRef = useRef<MediaStream | null>(null)
   const camOnRef = useRef(true)
@@ -126,6 +199,19 @@ export default function App() {
   useEffect(() => {
     micOnRef.current = micOn
   }, [micOn])
+
+  // Semana 4: espejos para callbacks que corren fuera de un render (eventos del
+  // servidor, cambios de sala).
+  const screenShareRef = useRef<{ connectionId: string; stream: MediaStream } | null>(null)
+  useEffect(() => {
+    screenShareRef.current = screenShare
+  }, [screenShare])
+  const groupRoomsRef = useRef<GroupRoom[]>([])
+  const movingRef = useRef(false)
+  const moveToRoomRef = useRef<(destRoomId: string, options?: { automatic?: boolean }) => void>(() => {})
+  const refreshGroupRoomsRef = useRef<() => void>(() => {})
+  const stopScreenShareRef = useRef<() => Promise<void>>(async () => {})
+  const leaveRef = useRef<() => void>(() => {})
 
   // Loop de reconexión (Parte D): backoff con techo, reauth antes de CADA
   // intento (no solo el primero -- el token de 120s puede haber vencido
@@ -201,9 +287,36 @@ export default function App() {
     onScreenShareStopped: (connectionId) => {
       setScreenShare((prev) => (prev?.connectionId === connectionId ? null : prev))
     },
+    onRoomChanged: (room) => {
+      // Semana 4: al entrar a una sala (o cambiar de sala) se vacía todo lo
+      // de la sala anterior; los participantes de la nueva llegan después, por
+      // el mismo onParticipantJoined de siempre. También sirve en una
+      // reconexión: quien se fue mientras estábamos desconectados no queda
+      // como cuadrito fantasma.
+      setCurrentRoom(room)
+      setParticipants(new Map())
+      setRemoteCamOn(new Map())
+      setScreenShare(null)
+      subscribedVideoRef.current.clear()
+      videoQualityRef.current.clear()
+    },
+    onSubsalaClosed: (groupRoomId) => {
+      setNotice('El host cerró esta subsala. Volviste a la sala principal.')
+      moveToRoomRef.current(groupRoomId, { automatic: true })
+    },
+    onSubsalasChanged: () => {
+      refreshGroupRoomsRef.current()
+    },
     onStatus: (status) => {
       if (status === 'room-closed') {
         setScreen('closed')
+      } else if (status === 'superseded') {
+        // Semana 4: la misma persona entró desde otra pestaña, dispositivo o
+        // sala. Esta conexión no reintenta: volvería a desplazar a la otra.
+        leavingRef.current = true
+        if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
+        sfuRef.current = null
+        setScreen('superseded')
       } else if (status === 'disconnected' && screenRef.current === 'call') {
         // Semana 4 (prueba con 16 participantes): el cliente muerto no puede
         // quedarse en sfuRef mientras se reconecta. Los efectos de video y
@@ -220,7 +333,12 @@ export default function App() {
         attemptReconnectRef.current()
       }
     },
-    onError: (err) => setError(err.message),
+    // Semana 4: dentro de la llamada los errores se muestran como aviso; antes
+    // quedaban en `error`, que solo se ve en el formulario.
+    onError: (err) => {
+      if (screenRef.current === 'call') setNotice(mensajeDeError(err))
+      else setError(mensajeDeError(err))
+    },
   }), [])
 
   // Un solo intento de reconexión en vuelo: el cliente NUEVO puede reportar
@@ -231,20 +349,23 @@ export default function App() {
   const attemptReconnect = useCallback(() => {
     if (leavingRef.current || reconnectInFlightRef.current) return
     const userId = userIdRef.current
+    const credencial = credencialRef.current
     const stream = localStreamRef.current
-    if (!roomId || !userId || !stream) return
+    if (!roomId || !userId || !credencial || !stream) return
 
     reconnectInFlightRef.current = true
     reconnectAttemptRef.current += 1
     const attempt = reconnectAttemptRef.current
     let pending: SFUClient | null = null
 
-    reauthForRoom(roomId, userId)
-      .then((registered) => {
+    // Semana 4: /reauth devuelve la sala donde D1 ubica a la persona, que
+    // puede ser una subsala: la reconexión va ahí, no a la sala del link.
+    reauthForGroup(roomId, credencial)
+      .then((renewed) => {
         const client = new SFUClient({
-          roomId: registered.roomId,
-          userId: registered.userId,
-          token: registered.token,
+          roomId: renewed.roomId,
+          userId,
+          token: renewed.token,
           callbacks: buildCallbacks(),
         })
         pending = client
@@ -277,15 +398,12 @@ export default function App() {
         // La pantalla compartida no sobrevive una reconexión
         // (getDisplayMedia pide gesto de usuario, no se puede re-adquirir
         // sola) -- si era la mía, la doy por terminada y aviso.
-        setScreenShare((prev) => {
-          if (prev && prev.connectionId === myConnectionIdRef.current) {
-            setError('Se detuvo tu pantalla compartida por la reconexión -- volvé a compartirla si hace falta.')
-            return null
-          }
-          return prev
-        })
+        if (screenShareRef.current && screenShareRef.current.connectionId !== client.getConnectionId()) {
+          screenShareRef.current.stream.getTracks().forEach((t) => t.stop())
+        }
         setConnectionStatus('connected')
         setReconnectTick((t) => t + 1)
+        refreshGroupRoomsRef.current()
       })
       .catch((err: unknown) => {
         reconnectInFlightRef.current = false
@@ -293,11 +411,18 @@ export default function App() {
         // de fallar, se suelta acá para no dejar sesiones colgadas.
         pending?.leave()
         if (leavingRef.current) return
-        const status = (err as { status?: number } | null)?.status
+        const status = err instanceof ApiError ? err.status : undefined
         if (status === 410) {
           // La sala se cerró mientras estábamos desconectados -- no tiene
           // sentido seguir reintentando para siempre.
           setScreen('closed')
+          return
+        }
+        if (status === 401) {
+          // Semana 4: la credencial de grupo venció (12 h): hay que volver a
+          // registrarse.
+          leaveRef.current()
+          setError('Tu sesión venció. Volvé a entrar a la sala.')
           return
         }
         const delay = reconnectBackoffMs(attempt)
@@ -341,6 +466,14 @@ export default function App() {
     videoQualityRef.current.clear()
     reconnectAttemptRef.current = 0
     myConnectionIdRef.current = null
+    credencialRef.current = null
+    setCurrentRoom(null)
+    setGroupRooms([])
+    groupRoomsRef.current = []
+    setSubsalasOpen(false)
+    setMoving(null)
+    movingRef.current = false
+    setNotice(null)
     setBandwidthLevel(0)
     setScreen('form')
     setStatus('idle')
@@ -350,6 +483,156 @@ export default function App() {
     setPermission('pending')
     leavingRef.current = false
   }, [localStream, screenShare])
+
+  useEffect(() => {
+    leaveRef.current = leave
+  }, [leave])
+
+  // Semana 4: salas abiertas de la reunión, con cuántas personas hay en cada
+  // una. La lista es informativa: si un pedido falla, se reintenta en el
+  // próximo refresco.
+  const refreshGroupRooms = useCallback(() => {
+    if (!roomId) return
+    const credencial = credencialRef.current
+    if (!credencial && !hostKey) return
+    fetchGroupRooms(roomId, { credencial, hostKey })
+      .then((data) => {
+        groupRoomsRef.current = data.rooms
+        setGroupRooms(data.rooms)
+        setSubsalasMax(data.max)
+        setIsHost(data.host)
+      })
+      .catch(() => {})
+  }, [roomId, hostKey])
+
+  useEffect(() => {
+    refreshGroupRoomsRef.current = refreshGroupRooms
+  }, [refreshGroupRooms])
+
+  useEffect(() => {
+    if (screen !== 'call') return
+    refreshGroupRooms()
+    if (!subsalasOpen) return
+    const id = setInterval(refreshGroupRooms, GROUP_ROOMS_REFRESH_MS)
+    return () => clearInterval(id)
+  }, [screen, subsalasOpen, refreshGroupRooms])
+
+  useEffect(() => {
+    if (!notice) return
+    const id = setTimeout(() => setNotice(null), 6000)
+    return () => clearTimeout(id)
+  }, [notice])
+
+  // Semana 4: mover a esta persona a otra sala de la reunión, sin reconectar
+  // (ver SFUClient.moveTo). El move_id se genera acá y se reusa en el único
+  // reintento: si el primer intento alcanzó a aplicarse en el servidor, el
+  // segundo no mueve dos veces.
+  const moveToRoom = useCallback(
+    async (destRoomId: string, options: { automatic?: boolean } = {}) => {
+      const client = sfuRef.current
+      const credencial = credencialRef.current
+      if (!client || !credencial || movingRef.current) return
+      if (client.getRoom()?.id === destRoomId) return
+
+      const destino = groupRoomsRef.current.find((r) => r.id === destRoomId)
+      movingRef.current = true
+      setMoving({ nombre: destRoomId === roomId ? 'la sala principal' : (destino?.nombre ?? 'la subsala') })
+      setSubsalasOpen(false)
+      try {
+        // La pantalla compartida es de la sala: se detiene antes de cambiar.
+        const sharing = screenShareRef.current
+        if (sharing && sharing.connectionId === myConnectionIdRef.current) {
+          await stopScreenShareRef.current()
+          setNotice('Se detuvo tu pantalla compartida al cambiar de sala.')
+        }
+
+        const moveId = crypto.randomUUID()
+        let lastError: unknown = null
+        for (let intento = 0; intento < 2; intento++) {
+          try {
+            const entrada = await requestEntrada(destRoomId, credencial, moveId)
+            await client.moveTo({ roomId: entrada.roomId, token: entrada.token })
+            lastError = null
+            break
+          } catch (err) {
+            lastError = err
+            // Un rechazo del servidor (sala cerrada, sin permiso) no cambia al
+            // reintentar; y si el cliente ya se desconectó, la reconexión se
+            // hace cargo.
+            const definitivo = err instanceof ApiError && err.status < 500
+            if (definitivo || client.isDisconnected()) break
+            await new Promise((resolve) => setTimeout(resolve, 800))
+          }
+        }
+        if (lastError) throw lastError
+
+        myConnectionIdRef.current = client.getConnectionId()
+        setMaxVisibleTiles(client.getMaxVisibleTiles())
+        setReconnectTick((t) => t + 1)
+      } catch (err) {
+        if (client.isDisconnected()) return
+        if (options.automatic) {
+          // La subsala ya no existe y no se pudo volver a la principal: se
+          // reconstruye la conexión y la reconexión va a donde diga D1.
+          client.reconnectFromScratch()
+          return
+        }
+        setNotice(mensajeDeError(err))
+      } finally {
+        movingRef.current = false
+        setMoving(null)
+        refreshGroupRoomsRef.current()
+      }
+    },
+    [roomId]
+  )
+
+  useEffect(() => {
+    moveToRoomRef.current = (destRoomId, options) => {
+      void moveToRoom(destRoomId, options)
+    }
+  }, [moveToRoom])
+
+  async function handleCreateSubsalas(cantidad: number) {
+    if (!roomId || !hostKey) return
+    setHostActionPending(true)
+    try {
+      const result = await createSubsalas(roomId, hostKey, cantidad)
+      if (result.omitidas > 0) setNotice(`Se crearon menos subsalas de las pedidas: el máximo es ${subsalasMax}.`)
+    } catch (err) {
+      setNotice(mensajeDeError(err))
+    } finally {
+      setHostActionPending(false)
+      refreshGroupRooms()
+    }
+  }
+
+  async function handleCloseRoom(targetRoomId: string) {
+    if (!hostKey) return
+    setHostActionPending(true)
+    try {
+      await closeRoomAsHost(targetRoomId, hostKey)
+    } catch (err) {
+      setNotice(mensajeDeError(err))
+    } finally {
+      setHostActionPending(false)
+      refreshGroupRooms()
+    }
+  }
+
+  async function handleEndMeeting() {
+    if (!roomId || !hostKey) return
+    setHostActionPending(true)
+    try {
+      // El servidor avisa "room-closed" a todas las salas de la reunión,
+      // incluida esta; eso lleva a la pantalla de sala cerrada.
+      await closeRoomAsHost(roomId, hostKey)
+    } catch (err) {
+      setNotice(mensajeDeError(err))
+    } finally {
+      setHostActionPending(false)
+    }
+  }
 
   // Parte B: la suscripción de VIDEO sigue a la página/orden que calcula
   // usePagedGallery -- nunca más de maxVisibleTiles tracks de video
@@ -436,7 +719,8 @@ export default function App() {
     // reconnectTick (Parte D): tras una reconexión exitosa, subscribedVideoRef
     // ya se limpió (ver attemptReconnect) contra un pc/cliente nuevo -- hace
     // falta que este efecto vuelva a correr para re-suscribirse desde cero,
-    // aunque gallery.visibleConnectionIds no haya cambiado.
+    // aunque gallery.visibleConnectionIds no haya cambiado. Semana 4: lo mismo
+    // después de cambiar de sala.
   }, [gallery.visibleConnectionIds, videoPublishTick, reconnectTick])
 
   // Parte C: quién pide capa alta puede cambiar SIN que cambie la página
@@ -481,6 +765,10 @@ export default function App() {
         if (cancelled) return
         if (!info) {
           setScreen('not-found')
+        } else if (info.tipo === 'subsala') {
+          // Semana 4: a una subsala se entra desde la sala principal.
+          setRoomInfo(info)
+          setScreen('subsala-link')
         } else if (info.estado === 'cerrada') {
           setRoomInfo(info)
           setScreen('closed')
@@ -569,7 +857,7 @@ export default function App() {
       setMicOn(true)
       await client?.setMicEnabled(true, track)
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setNotice(mensajeDeError(err))
     }
   }
 
@@ -592,7 +880,7 @@ export default function App() {
       setCamOn(true)
       await client?.setCameraEnabled(true, track)
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setNotice(mensajeDeError(err))
     }
   }
 
@@ -622,21 +910,25 @@ export default function App() {
       // navegador (la barra "dejar de compartir" de Chrome), no solo desde
       // nuestro botón -- hay que escuchar eso también.
       track.addEventListener('ended', () => {
-        stopScreenShare()
+        stopScreenShareRef.current()
       })
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setNotice(mensajeDeError(err))
     }
   }
 
   async function stopScreenShare() {
     const client = sfuRef.current
-    const current = screenShare
+    const current = screenShareRef.current
     if (!client || !current || current.connectionId !== myConnectionIdRef.current) return
     setScreenShare(null)
     current.stream.getTracks().forEach((t) => t.stop())
     await client.stopScreenShare().catch(() => {})
   }
+
+  useEffect(() => {
+    stopScreenShareRef.current = stopScreenShare
+  })
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -656,6 +948,7 @@ export default function App() {
 
       const registered = await registerForRoom(roomId, { nombre: nombre.trim(), correo: correo.trim(), rol })
       userIdRef.current = registered.userId
+      credencialRef.current = registered.credencial
 
       client = new SFUClient({
         roomId: registered.roomId,
@@ -683,10 +976,11 @@ export default function App() {
         setParticipants(new Map())
         setRemoteCamOn(new Map())
         setScreenShare(null)
+        setCurrentRoom(null)
         subscribedVideoRef.current.clear()
         videoQualityRef.current.clear()
       }
-      setError(err instanceof Error ? err.message : String(err))
+      setError(mensajeDeError(err))
     } finally {
       setJoining(false)
     }
@@ -705,6 +999,24 @@ export default function App() {
       <StatusScreen
         title="Sala no encontrada"
         body="Este link no corresponde a ninguna sala. Pedile al organizador que te comparta uno nuevo."
+      />
+    )
+  }
+
+  if (screen === 'subsala-link') {
+    return (
+      <StatusScreen
+        title="Este link es de una subsala"
+        body="A las subsalas se entra desde la sala principal. Pedile al organizador el link de la reunión y elegí la subsala desde ahí."
+      />
+    )
+  }
+
+  if (screen === 'superseded') {
+    return (
+      <StatusScreen
+        title="Abriste la reunión en otro lado"
+        body="Entraste desde otra pestaña o dispositivo, así que esta ventana se desconectó. Seguí en la otra, o recargá esta página para volver a entrar acá."
       />
     )
   }
@@ -769,6 +1081,20 @@ export default function App() {
       onStartScreenShare={startScreenShare}
       onStopScreenShare={stopScreenShare}
       connectionStatus={connectionStatus}
+      groupRoomId={roomId}
+      currentRoom={currentRoom}
+      groupRooms={groupRooms}
+      subsalasMax={subsalasMax}
+      isHost={isHost}
+      subsalasOpen={subsalasOpen}
+      onToggleSubsalas={() => setSubsalasOpen((open) => !open)}
+      onEnterRoom={(destRoomId) => void moveToRoom(destRoomId)}
+      onCreateSubsalas={handleCreateSubsalas}
+      onCloseRoom={handleCloseRoom}
+      onEndMeeting={handleEndMeeting}
+      moving={moving}
+      notice={notice}
+      hostActionPending={hostActionPending}
     />
   )
 }

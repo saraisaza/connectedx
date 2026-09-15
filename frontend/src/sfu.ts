@@ -14,6 +14,10 @@ import { API_BASE, fetchIceServers, postJson } from './api'
 //   4. suscribirse a los tracks remotos que ya existían + los que se vayan
 //      publicando después (llegan como evento "track-published" por WS)
 //
+// Semana 4 (subsalas): moveTo() cambia de sala sin reconectar. El
+// RTCPeerConnection, la sesión SFU y los tracks publicados siguen siendo los
+// mismos; cambian el WebSocket de señalización y qué tracks remotos se reciben.
+//
 // La API HTTP de Realtime SFU no tiene un endpoint de intercambio de ICE
 // candidates (no soporta trickle ICE), así que esperamos a que termine la
 // recolección de candidatos (iceGatheringState === 'complete') antes de
@@ -71,6 +75,22 @@ const MEDIA_STALE_THRESHOLD_MS = 25_000
 // retryUncappedLater). Suman unos 45 s.
 const UNCAPPED_RETRY_DELAYS_MS = [700, 1500, 3000, 5000, 8000, 12000, 15000]
 
+// Semana 4: Cloudflare acepta hasta 64 tracks por llamada. Los pedidos más
+// grandes (entrar a una sala de 300) se parten.
+const MAX_TRACKS_PER_CALL = 64
+
+// Semana 4: cuánto se espera a que ICE se recupere de un 'disconnected' antes
+// de reconstruir la sesión (ver handleConnectionStateChange).
+const ICE_DISCONNECT_GRACE_MS = 5000
+
+// Semana 4: códigos con los que el servidor cierra el WebSocket a propósito
+// (ver roomSession.ts).
+const CLOSE_CODE_SUPERSEDED = 4001
+
+// Semana 4: si el AudioContext de medición falla, se rearma a lo sumo una vez
+// por intervalo (evita un bucle si el dispositivo sigue fallando).
+const AUDIO_REBUILD_MIN_INTERVAL_MS = 10_000
+
 interface PublicParticipant {
   connectionId: string
   nombre: string
@@ -90,13 +110,25 @@ interface SimulcastConfig {
   highMaxBitrateBps: number
 }
 
+// Semana 4: la sala a la que pertenece ahora esta conexión.
+export interface RoomDescriptor {
+  id: string
+  nombre: string
+  tipo: 'principal' | 'subsala'
+  groupRoomId: string
+}
+
 interface HelloMessage {
   type: 'hello'
   connectionId: string
+  connectionSecret: string
   participants: PublicParticipant[]
   maxVisibleTiles: number
   simulcast: SimulcastConfig
   screenShareMaxBitrateBps: number
+  room: RoomDescriptor
+  epoch: number
+  sfuSessionId: string | null
 }
 
 type ServerMessage =
@@ -107,6 +139,10 @@ type ServerMessage =
   | { type: 'screen-share-stopped'; connectionId: string }
   | { type: 'media-state'; connectionId: string; camOn: boolean; micOn: boolean }
   | { type: 'room-closed' }
+  | { type: 'subsala-closed'; groupRoomId: string }
+  | { type: 'subsalas-changed' }
+  // Semana 4: la misma persona entró desde otra sala, pestaña o dispositivo.
+  | { type: 'superseded' }
 
 export interface SFUCallbacks {
   onParticipantJoined?: (participant: { connectionId: string; nombre: string; camOn: boolean }) => void
@@ -129,10 +165,19 @@ export interface SFUCallbacks {
   // track (ver comentario largo en CallScreen.tsx).
   onMediaState?: (connectionId: string, camOn: boolean) => void
   onScreenShareStopped?: (connectionId: string) => void
+  // Semana 4: esta conexión pasó a pertenecer a otra sala (al entrar y en cada
+  // moveTo). Llega ANTES de los participantes de la sala nueva, así App.tsx
+  // puede vaciar los de la sala anterior.
+  onRoomChanged?: (room: RoomDescriptor) => void
+  // Semana 4: el host cerró la subsala actual; hay que volver a la principal.
+  onSubsalaClosed?: (groupRoomId: string) => void
+  // Semana 4: se crearon o cerraron subsalas en la reunión.
+  onSubsalasChanged?: () => void
   // Reusa el mismo callback para reportar 'disconnected' (conexión perdida
   // de forma inesperada -- App.tsx arranca su loop de reconexión) además de
   // los pc.connectionState normales -- no se agregan callbacks nuevos para
-  // esto, ver join().
+  // esto, ver join(). Semana 4: también 'superseded' (la persona entró desde
+  // otra sala, pestaña o dispositivo; no hay que reconectar).
   onStatus?: (status: string) => void
   onError?: (error: Error) => void
 }
@@ -158,18 +203,23 @@ function waitForIceGatheringComplete(pc: RTCPeerConnection, timeoutMs = 4000): P
 export interface SFUClientOptions {
   roomId: string
   userId: string // usado para nombrar los tracks publicados (`${userId}-audio`/`-video`)
-  // Credencial emitida por POST /register (ver api.ts): sin esto GET /ws
-  // rechaza el upgrade con 401 antes de llegar al Durable Object. El
-  // servidor deriva el nombre a mostrar de este token, no hace falta
-  // mandarlo por separado.
+  // Credencial emitida por POST /register, /reauth o /entrada (ver api.ts):
+  // sin esto GET /ws rechaza el upgrade con 401 antes de llegar al Durable
+  // Object. El servidor deriva el nombre a mostrar de este token, no hace
+  // falta mandarlo por separado.
   token: string
   callbacks: SFUCallbacks
 }
+
+type SubscriptionItem = { sessionId: string; trackName: string; connectionId: string; kind: Kind; preferredRid?: 'q' | 'f' }
 
 export class SFUClient {
   private pc: RTCPeerConnection | null = null
   private ws: WebSocket | null = null
   private connectionId: string | null = null
+  // Semana 4: secreto de esta conexión; el backend lo exige en todo /sfu/*.
+  private connectionSecret: string | null = null
+  private room: RoomDescriptor | null = null
 
   // Serializa toda operación que toque signalingState del RTCPeerConnection:
   // publish/subscribe/renegotiate no pueden pisarse entre sí.
@@ -214,6 +264,7 @@ export class SFUClient {
     }
   >()
   private audioLevelInterval: ReturnType<typeof setInterval> | null = null
+  private lastAudioRebuildAt = 0
 
   // Simulcast (Parte C): resuelto del `hello` del servidor apenas se conoce
   // -- publishLocalTracks() lo necesita para armar sendEncodings, y siempre
@@ -249,13 +300,17 @@ export class SFUClient {
 
   // Reconexión (Parte D): esta instancia se da por muerta apenas detecta una
   // desconexión inesperada (ws cerrado sin que nosotros lo pidiéramos, o el
-  // pc pasa a failed/disconnected) -- App.tsx es quien arma una instancia
-  // NUEVA para reconectar (ver plan), esta solo necesita reportarlo una vez
-  // y limpiarse. `intentionalClose` distingue un cierre nuestro (leave() o
-  // el servidor avisando room-closed) de uno inesperado -- sin esto,
-  // cerrar la sesión a propósito dispararía un intento de reconexión.
+  // pc pasa a failed) -- App.tsx es quien arma una instancia NUEVA para
+  // reconectar (ver plan), esta solo necesita reportarlo una vez y
+  // limpiarse. `intentionalClose` distingue un cierre nuestro (leave() o el
+  // servidor avisando room-closed) de uno inesperado -- sin esto, cerrar la
+  // sesión a propósito dispararía un intento de reconexión.
   private intentionalClose = false
   private unexpectedlyDisconnected = false
+  private iceGraceTimer: ReturnType<typeof setTimeout> | null = null
+  // Semana 4: el servidor avisó por mensaje que cierra la sala; el cierre del
+  // WebSocket que sigue no es una desconexión inesperada.
+  private expectingRoomClose = false
 
   private roomId: string
   private userId: string
@@ -278,41 +333,118 @@ export class SFUClient {
     return result
   }
 
+  // Semana 4: identificación de esta conexión en cada llamada a /sfu/*.
+  private auth(): { connectionId: string | null; connectionSecret: string | null } {
+    return { connectionId: this.connectionId, connectionSecret: this.connectionSecret }
+  }
+
   async join(localStream: MediaStream): Promise<void> {
     const iceServers = await fetchIceServers(this.roomId)
     const pc = new RTCPeerConnection({ iceServers, bundlePolicy: 'max-bundle' })
     this.pc = pc
     pc.addEventListener('track', (event) => this.handleTrackEvent(event))
-    // failed/disconnected inesperado (nunca si el cierre lo pedimos
-    // nosotros) dispara el flujo de reconexión -- ver handleUnexpectedDisconnect.
-    // Cualquier otro estado sigue reportándose tal cual por onStatus, como
-    // siempre.
-    pc.addEventListener('connectionstatechange', () => {
-      if ((pc.connectionState === 'failed' || pc.connectionState === 'disconnected') && !this.intentionalClose) {
-        this.handleUnexpectedDisconnect()
-      } else {
-        this.callbacks.onStatus?.(pc.connectionState)
-      }
-    })
+    pc.addEventListener('connectionstatechange', () => this.handleConnectionStateChange(pc))
 
-    const hello = await this.openWebSocket()
-    this.connectionId = hello.connectionId
-    this.maxVisibleTiles = hello.maxVisibleTiles
-    this.simulcastConfig = hello.simulcast
-    this.screenShareMaxBitrateBps = hello.screenShareMaxBitrateBps
+    const { ws, hello } = await this.openWebSocket(this.roomId, this.token)
+    this.ws = ws
+    this.applyHello(hello)
 
     await this.createSfuSession()
     await this.publishLocalTracks(localStream)
     this.startBandwidthMonitor()
+    await this.subscribeToHelloParticipants(hello)
+  }
 
-    // Audio y pantalla compartida de TODOS los participantes, siempre (no
-    // tienen límite) -- se auto-suscriben acá mismo. Video NO se
-    // auto-suscribe más: quién ve a quién ahora lo decide usePagedGallery
-    // del lado de App.tsx (Parte B), llamando a subscribeToParticipantVideo()
-    // explícitamente una vez que sabe el orden real (active speaker,
-    // paginación). Antes de Parte B esto vivía acá como "los primeros N en
-    // el orden del backend" -- ya no.
-    const initialUncappedTracks: { sessionId: string; trackName: string; connectionId: string; kind: Kind }[] = []
+  // Semana 4: cambiar de sala dentro de la misma reunión sin reconectar. Si algo
+  // falla ANTES de que la sala destino acepte la conexión, esta instancia sigue
+  // en la sala actual como si nada. Si falla DESPUÉS, D1 ya ubica a la persona
+  // en la sala destino: se trata como una desconexión y la reconexión de
+  // App.tsx la lleva ahí.
+  async moveTo(target: { roomId: string; token: string }): Promise<void> {
+    if (!this.pc || this.isDisconnected()) throw new Error('No hay una conexión activa para cambiar de sala')
+
+    const previousWs = this.ws
+    const wasExpectingClose = this.expectingRoomClose
+    // La sala destino le avisa a la de origen apenas acepta la conexión nueva,
+    // y ese cierre de la conexión vieja (4001) puede llegar antes que el hello:
+    // durante el cambio es un cierre esperado.
+    this.expectingRoomClose = true
+    // El audio de la sala actual se silencia al instante para no mezclar
+    // conversaciones mientras dura el cambio.
+    this.setRemoteAudioMuted(true)
+    let opened: { ws: WebSocket; hello: HelloMessage }
+    try {
+      opened = await this.openWebSocket(target.roomId, target.token)
+    } catch (err) {
+      this.setRemoteAudioMuted(false)
+      this.expectingRoomClose = wasExpectingClose
+      // Si la conexión vieja ya no está abierta (la sala destino alcanzó a
+      // aceptar el movimiento, o la subsala se cerró), no hay dónde quedarse:
+      // se reconstruye y la reconexión va a donde diga D1.
+      if (!previousWs || previousWs.readyState !== WebSocket.OPEN) this.handleUnexpectedDisconnect()
+      throw err
+    }
+
+    try {
+      // Desde acá esta instancia pertenece a la sala destino: el cierre del
+      // WebSocket viejo ya no dispara reconexión (ver openWebSocket).
+      const received = [...this.trackNameToMid.entries()].map(([trackName, mid]) => ({ trackName, mid }))
+      this.ws = opened.ws
+      this.roomId = target.roomId
+      this.token = target.token
+      this.expectingRoomClose = false
+      this.resetRemoteState()
+      this.applyHello(opened.hello)
+      try {
+        previousWs?.close(1000, 'Cambio de sala')
+      } catch {
+        // ya estaba cerrado (por ejemplo, la subsala se cerró)
+      }
+
+      // Se suelta sin renegociar todo lo que se recibía de la sala anterior.
+      // La sesión SFU es la misma, así que se pide a través de la sala nueva.
+      if (received.length > 0) await this.unsubscribeItems(received).catch(() => {})
+
+      // La sala destino adopta la sesión y los tracks que ya se publicaban.
+      if (!opened.hello.sfuSessionId) throw new Error('La sala destino no recibió la sesión de video')
+      const kinds: ('audio' | 'video')[] = []
+      if (this.audioSender) kinds.push('audio')
+      if (this.videoSender) kinds.push('video')
+      await postJson(`/api/rooms/${this.roomId}/sfu/adopt`, { ...this.auth(), kinds, camOn: this.camOn, micOn: this.micOn })
+
+      await this.subscribeToHelloParticipants(opened.hello)
+    } catch (err) {
+      this.handleUnexpectedDisconnect()
+      throw err
+    }
+  }
+
+  // Semana 4: para cuando App.tsx necesita abandonar esta conexión y
+  // reconstruir desde cero (por ejemplo, si no pudo volver a la principal
+  // después de que se cerró la subsala).
+  reconnectFromScratch(): void {
+    this.handleUnexpectedDisconnect()
+  }
+
+  private applyHello(hello: HelloMessage): void {
+    this.connectionId = hello.connectionId
+    this.connectionSecret = hello.connectionSecret
+    this.maxVisibleTiles = hello.maxVisibleTiles
+    this.simulcastConfig = hello.simulcast
+    this.screenShareMaxBitrateBps = hello.screenShareMaxBitrateBps
+    this.room = hello.room
+    this.callbacks.onRoomChanged?.(hello.room)
+  }
+
+  // Audio y pantalla compartida de TODOS los participantes, siempre (no
+  // tienen límite) -- se auto-suscriben acá mismo. Video NO se
+  // auto-suscribe más: quién ve a quién ahora lo decide usePagedGallery
+  // del lado de App.tsx (Parte B), llamando a subscribeToParticipantVideo()
+  // explícitamente una vez que sabe el orden real (active speaker,
+  // paginación). Antes de Parte B esto vivía acá como "los primeros N en
+  // el orden del backend" -- ya no.
+  private async subscribeToHelloParticipants(hello: HelloMessage): Promise<void> {
+    const initialUncappedTracks: SubscriptionItem[] = []
     for (const p of hello.participants) {
       this.callbacks.onParticipantJoined?.({ connectionId: p.connectionId, nombre: p.nombre, camOn: p.camOn })
       if (!p.sfuSessionId) continue
@@ -331,6 +463,17 @@ export class SFUClient {
     if (initialUncappedTracks.length > 0) await this.requestSubscription(initialUncappedTracks)
   }
 
+  // Semana 4: todo lo que esta instancia sabe de los participantes REMOTOS de
+  // la sala actual. Lo propio (PeerConnection, senders, sesión SFU) no se toca.
+  private resetRemoteState(): void {
+    for (const connectionId of [...this.audioGraphs.keys()]) this.teardownAudioGraph(connectionId)
+    this.knownTracks.clear()
+    this.trackNameToMid.clear()
+    this.midOwners.clear()
+    this.pendingTrackOwners.clear()
+    this.subscribedVideoTrackNames.clear()
+  }
+
   // Parte B (usePagedGallery) necesita este número para paginar -- viene del
   // `hello` del servidor, nunca hardcodeado del lado del cliente.
   getMaxVisibleTiles(): number {
@@ -344,6 +487,10 @@ export class SFUClient {
     return this.connectionId
   }
 
+  getRoom(): RoomDescriptor | null {
+    return this.room
+  }
+
   // Semana 4: App.tsx lo usa para no instalar como cliente activo uno que se
   // cayó mientras terminaba su propio join() durante una reconexión.
   isDisconnected(): boolean {
@@ -352,6 +499,7 @@ export class SFUClient {
 
   leave(): void {
     this.intentionalClose = true
+    this.clearIceGrace()
     this.ws?.close()
     this.pc?.close()
     if (this.audioLevelInterval) clearInterval(this.audioLevelInterval)
@@ -360,17 +508,50 @@ export class SFUClient {
     this.audioContext?.close().catch(() => {})
   }
 
-  // Parte D: se dispara UNA sola vez por instancia (ws close y pc
-  // failed/disconnected pueden llegar casi juntos para el mismo evento de
-  // red -- sin este guard, dispararían dos avisos/limpiezas). Reporta la
-  // pérdida por el mismo `onStatus` de siempre (string 'disconnected') y se
-  // limpia -- NO intenta reconectarse a sí misma, eso lo hace App.tsx
-  // armando una instancia nueva (ver plan: "reconstruir, no resucitar").
+  // Parte D: se dispara UNA sola vez por instancia (ws close y pc failed
+  // pueden llegar casi juntos para el mismo evento de red -- sin este guard,
+  // dispararían dos avisos/limpiezas). Reporta la pérdida por el mismo
+  // `onStatus` de siempre (string 'disconnected') y se limpia -- NO intenta
+  // reconectarse a sí misma, eso lo hace App.tsx armando una instancia nueva
+  // (ver plan: "reconstruir, no resucitar").
   private handleUnexpectedDisconnect(): void {
     if (this.unexpectedlyDisconnected) return
     this.unexpectedlyDisconnected = true
     this.callbacks.onStatus?.('disconnected')
     this.leave()
+  }
+
+  // Un 'failed' inesperado (nunca si el cierre lo pedimos nosotros) dispara
+  // el flujo de reconexión -- ver handleUnexpectedDisconnect. Semana 4:
+  // 'disconnected' ya no lo dispara al instante. ICE suele recuperarse solo de
+  // un corte breve, y reconstruir la sesión hace que el resto de la sala vea a
+  // la persona salir y volver a entrar (pasó en la prueba de 16): se espera
+  // ICE_DISCONNECT_GRACE_MS. Cualquier otro estado sigue reportándose tal
+  // cual por onStatus.
+  private handleConnectionStateChange(pc: RTCPeerConnection): void {
+    if (this.intentionalClose) return
+    const state = pc.connectionState
+    if (state === 'failed') {
+      this.clearIceGrace()
+      this.handleUnexpectedDisconnect()
+      return
+    }
+    if (state === 'disconnected') {
+      if (!this.iceGraceTimer) {
+        this.iceGraceTimer = setTimeout(() => {
+          this.iceGraceTimer = null
+          if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') this.handleUnexpectedDisconnect()
+        }, ICE_DISCONNECT_GRACE_MS)
+      }
+      return
+    }
+    this.clearIceGrace()
+    this.callbacks.onStatus?.(state)
+  }
+
+  private clearIceGrace(): void {
+    if (this.iceGraceTimer) clearTimeout(this.iceGraceTimer)
+    this.iceGraceTimer = null
   }
 
   private registerKnownTrack(trackName: string, connectionId: string, sessionId: string, kind: Kind): void {
@@ -389,7 +570,7 @@ export class SFUClient {
         const info = this.knownTracks.get(name)
         return info ? { sessionId: info.sessionId, trackName: name, connectionId: info.connectionId, kind: info.kind } : null
       })
-      .filter((x): x is { sessionId: string; trackName: string; connectionId: string; kind: Kind } => x !== null)
+      .filter((x): x is SubscriptionItem => x !== null)
     if (items.length > 0) await this.requestSubscription(items)
   }
 
@@ -420,7 +601,7 @@ export class SFUClient {
   // para el resto -- así un cuadrito nunca arranca pidiendo más de lo que
   // necesita, sin depender de un cambio de calidad posterior para corregirlo.
   async subscribeToParticipantVideos(connectionIds: string[], featuredIds: Set<string>): Promise<Set<string>> {
-    const items: { sessionId: string; trackName: string; connectionId: string; kind: Kind; preferredRid: 'q' | 'f' }[] = []
+    const items: SubscriptionItem[] = []
     for (const connectionId of connectionIds) {
       const trackName = this.videoTrackNameFor(connectionId)
       if (!trackName) continue
@@ -449,7 +630,7 @@ export class SFUClient {
     if (!mid) return
     await postJson(
       `/api/rooms/${this.roomId}/sfu/track-quality`,
-      { connectionId: this.connectionId, tracks: [{ mid, trackName, preferredRid: quality === 'high' ? 'f' : 'q' }] },
+      { ...this.auth(), tracks: [{ mid, trackName, preferredRid: quality === 'high' ? 'f' : 'q' }] },
       'PUT'
     )
   }
@@ -477,13 +658,7 @@ export class SFUClient {
       .filter((x): x is { mid: string; trackName: string } => x !== null)
     if (items.length === 0) return
 
-    await this.runExclusive(async () => {
-      await postJson(
-        `/api/rooms/${this.roomId}/sfu/unsubscribe`,
-        { connectionId: this.connectionId, tracks: items },
-        'PUT'
-      )
-    })
+    await this.unsubscribeItems(items)
 
     for (const item of items) {
       this.trackNameToMid.delete(item.trackName)
@@ -492,39 +667,69 @@ export class SFUClient {
     }
   }
 
-  private openWebSocket(): Promise<{
-    connectionId: string
-    participants: PublicParticipant[]
-    maxVisibleTiles: number
-    simulcast: SimulcastConfig
-    screenShareMaxBitrateBps: number
-  }> {
+  // force:true del lado del servidor: corta el flujo sin renegociar. De a
+  // MAX_TRACKS_PER_CALL por llamada.
+  private async unsubscribeItems(items: { mid: string; trackName: string }[]): Promise<void> {
+    for (let i = 0; i < items.length; i += MAX_TRACKS_PER_CALL) {
+      const chunk = items.slice(i, i + MAX_TRACKS_PER_CALL)
+      await this.runExclusive(async () => {
+        await postJson(`/api/rooms/${this.roomId}/sfu/unsubscribe`, { ...this.auth(), tracks: chunk }, 'PUT')
+      })
+    }
+  }
+
+  // Abre el WebSocket de señalización de una sala y espera su `hello`. No
+  // instala el socket como el actual: lo hace quien llama (join o moveTo).
+  // Mensajes y cierres de un socket que ya no es el actual se ignoran, así el
+  // WebSocket de la sala anterior no puede disparar nada después de un cambio.
+  private openWebSocket(roomId: string, token: string): Promise<{ ws: WebSocket; hello: HelloMessage }> {
     return new Promise((resolve, reject) => {
       const wsBase = API_BASE.replace(/^http/, 'ws')
-      const url = `${wsBase}/api/rooms/${this.roomId}/ws?token=${encodeURIComponent(this.token)}`
+      const url = `${wsBase}/api/rooms/${roomId}/ws?token=${encodeURIComponent(token)}`
       const ws = new WebSocket(url)
-      this.ws = ws
+      let settled = false
 
       const onFirstMessage = (event: MessageEvent) => {
         const msg = JSON.parse(event.data) as ServerMessage
         if (msg.type !== 'hello') return // no debería pasar, pero no rompemos si pasa
         ws.removeEventListener('message', onFirstMessage)
-        ws.addEventListener('message', (e) => this.handleServerMessage(JSON.parse(e.data)))
-        resolve({
-          connectionId: msg.connectionId,
-          participants: msg.participants,
-          maxVisibleTiles: msg.maxVisibleTiles,
-          simulcast: msg.simulcast,
-          screenShareMaxBitrateBps: msg.screenShareMaxBitrateBps,
+        ws.addEventListener('message', (e) => {
+          if (ws === this.ws) this.handleServerMessage(JSON.parse(e.data))
         })
+        settled = true
+        resolve({ ws, hello: msg })
       }
       ws.addEventListener('message', onFirstMessage)
-      ws.addEventListener('error', () => reject(new Error('No se pudo abrir el WebSocket de señalización')))
+      ws.addEventListener('error', () => {
+        if (settled) return
+        settled = true
+        reject(new Error('No se pudo abrir el WebSocket de señalización'))
+      })
       // Parte D: un cierre que NOSOTROS no pedimos (leave()/room-closed
       // marcan intentionalClose ANTES de cerrar) es una desconexión
-      // inesperada -- dispara el mismo flujo que un pc failed/disconnected.
-      ws.addEventListener('close', () => {
-        if (!this.intentionalClose) this.handleUnexpectedDisconnect()
+      // inesperada -- dispara el mismo flujo que un pc failed.
+      ws.addEventListener('close', (event) => {
+        if (!settled) {
+          settled = true
+          reject(new Error('No se pudo abrir el WebSocket de señalización'))
+          return
+        }
+        if (ws !== this.ws || this.intentionalClose) return
+        // Cierre esperado: la sala avisó por mensaje que cierra (room-closed o
+        // subsala-closed), o hay un cambio de sala en curso y la sala de origen
+        // cierra la conexión vieja con 4001 antes de que llegue el hello de la
+        // sala destino (ver moveTo).
+        if (this.expectingRoomClose) return
+        // Semana 4: 4001 = la persona entró desde otra sala, pestaña o
+        // dispositivo. Reconectar solo volvería a desplazar a la otra conexión.
+        if (event.code === CLOSE_CODE_SUPERSEDED) {
+          this.callbacks.onStatus?.('superseded')
+          this.leave()
+          return
+        }
+        // Sin aviso previo, se reconecta: /reauth dirá si la sala se cerró o a
+        // qué sala volver.
+        this.handleUnexpectedDisconnect()
       })
     })
   }
@@ -535,17 +740,15 @@ export class SFUClient {
         this.callbacks.onParticipantJoined?.(msg.participant)
         break
       case 'participant-left': {
-        // Si el que se fue tenía video suscrito, lo soltamos -- así el
-        // contador del servidor no queda "pegado" (aunque el servidor
-        // también reconcilia esto solo por las dudas, ver roomSession.ts
-        // handleDisconnect). Best-effort: si esta llamada falla, el
-        // respaldo del servidor igual libera el cupo.
-        for (const [trackName, info] of this.knownTracks) {
-          if (info.connectionId !== msg.connectionId || info.kind !== 'video') continue
-          if (this.subscribedVideoTrackNames.has(trackName)) {
-            this.unsubscribeFromTracks([trackName]).catch(() => {})
-          }
-        }
+        // Se sueltan TODOS los tracks que se recibían de quien se fue, no solo
+        // el video: antes el audio seguía llegando (y costando ancho de banda)
+        // aunque ya no sonara. Con subsalas importa más: a quien se mudó a otra
+        // sala no se lo debe seguir recibiendo acá. Best-effort: el servidor
+        // igual libera el cupo de video (ver roomSession.ts handleDisconnect).
+        const received = [...this.knownTracks.entries()]
+          .filter(([trackName, info]) => info.connectionId === msg.connectionId && this.trackNameToMid.has(trackName))
+          .map(([trackName]) => trackName)
+        if (received.length > 0) this.unsubscribeFromTracks(received).catch(() => {})
         for (const [trackName, info] of this.knownTracks) {
           if (info.connectionId === msg.connectionId) this.knownTracks.delete(trackName)
         }
@@ -586,7 +789,26 @@ export class SFUClient {
         this.callbacks.onMediaState?.(msg.connectionId, msg.camOn)
         break
       case 'room-closed':
+        this.expectingRoomClose = true
         this.callbacks.onStatus?.('room-closed')
+        this.leave()
+        break
+      case 'subsala-closed':
+        // La conexión con esta subsala se va a cerrar; la PeerConnection sigue
+        // viva para que App.tsx mueva a la persona a la principal.
+        this.expectingRoomClose = true
+        this.callbacks.onSubsalaClosed?.(msg.groupRoomId)
+        break
+      case 'subsalas-changed':
+        this.callbacks.onSubsalasChanged?.()
+        break
+      case 'superseded':
+        // Mismo significado que el cierre con 4001, pero llega antes: el
+        // evento `close` depende de que termine el cierre de la conexión.
+        // Durante un cambio de sala es la sala de origen soltando la conexión
+        // vieja (ver moveTo), no otra pestaña.
+        if (this.expectingRoomClose) break
+        this.callbacks.onStatus?.('superseded')
         this.leave()
         break
     }
@@ -612,13 +834,41 @@ export class SFUClient {
 
   private ensureAudioContext(): AudioContext {
     if (!this.audioContext) {
-      this.audioContext = new AudioContext()
+      const ctx = new AudioContext()
+      // Semana 4: si el dispositivo o el renderer de audio fallan, Chromium
+      // detiene el contexto y emite 'error' (Chrome 127+). Se rearma la
+      // medición; la reproducción no depende de esto (va por <audio>).
+      ctx.addEventListener('error', () => this.rebuildAudioAnalysis())
       // Requiere gesto de usuario en algunos navegadores; join() siempre se
       // dispara desde el submit real del formulario, así que ya estamos
       // dentro de ese gesto acá.
-      this.audioContext.resume().catch(() => {})
+      ctx.resume().catch(() => {})
+      this.audioContext = ctx
     }
     return this.audioContext
+  }
+
+  private rebuildAudioAnalysis(): void {
+    if (this.intentionalClose) return
+    const now = Date.now()
+    if (now - this.lastAudioRebuildAt < AUDIO_REBUILD_MIN_INTERVAL_MS) return
+    this.lastAudioRebuildAt = now
+
+    const previous = this.audioContext
+    this.audioContext = null
+    previous?.close().catch(() => {})
+    const ctx = this.ensureAudioContext()
+    for (const graph of this.audioGraphs.values()) {
+      graph.source.disconnect()
+      graph.analyser.disconnect()
+      const stream = graph.element.srcObject
+      if (!(stream instanceof MediaStream)) continue
+      graph.source = ctx.createMediaStreamSource(stream)
+      graph.analyser = ctx.createAnalyser()
+      graph.analyser.fftSize = 512
+      graph.source.connect(graph.analyser)
+      graph.smoothedLevel = 0
+    }
   }
 
   private setupAudioGraph(connectionId: string, track: MediaStreamTrack): void {
@@ -665,6 +915,12 @@ export class SFUClient {
     graph.source.disconnect()
     graph.analyser.disconnect()
     this.audioGraphs.delete(connectionId)
+  }
+
+  // Semana 4: silenciar el audio de los demás sin soltar nada (mientras dura
+  // un cambio de sala).
+  private setRemoteAudioMuted(muted: boolean): void {
+    for (const graph of this.audioGraphs.values()) graph.element.muted = muted
   }
 
   private pollAudioLevels(): void {
@@ -777,9 +1033,7 @@ export class SFUClient {
     // La DO ya guarda el sessionId contra el participante; acá solo
     // necesitamos que la sesión quede creada del lado del SFU antes de
     // publicar/suscribir tracks.
-    await postJson<{ sessionId: string }>(`/api/rooms/${this.roomId}/sfu/session`, {
-      connectionId: this.connectionId,
-    })
+    await postJson<{ sessionId: string }>(`/api/rooms/${this.roomId}/sfu/session`, this.auth())
   }
 
   private async publishLocalTracks(stream: MediaStream): Promise<void> {
@@ -828,7 +1082,7 @@ export class SFUClient {
       const data = await postJson<{ sessionDescription: { type: 'answer'; sdp: string } }>(
         `/api/rooms/${this.roomId}/sfu/publish`,
         {
-          connectionId: this.connectionId,
+          ...this.auth(),
           offer: { type: localDescription.type, sdp: localDescription.sdp },
           tracks: entries.map((e) => ({ mid: e.transceiver.mid, trackName: e.trackName, kind: e.kind })),
         }
@@ -854,14 +1108,19 @@ export class SFUClient {
   // error visible (la request de arriba sigue devolviendo 200). Verificado
   // con Playwright: reproducía ~60% de las veces en un join rápido de 2
   // personas antes de este fix.
-  private async requestSubscription(
-    items: { sessionId: string; trackName: string; connectionId: string; kind: Kind; preferredRid?: 'q' | 'f' }[],
-    retriesLeft = 3
-  ): Promise<void> {
+  private async requestSubscription(items: SubscriptionItem[], retriesLeft = 3): Promise<void> {
+    // Semana 4: Cloudflare acepta hasta MAX_TRACKS_PER_CALL tracks por llamada.
+    if (items.length > MAX_TRACKS_PER_CALL) {
+      for (let i = 0; i < items.length; i += MAX_TRACKS_PER_CALL) {
+        await this.requestSubscription(items.slice(i, i + MAX_TRACKS_PER_CALL), retriesLeft)
+      }
+      return
+    }
+
     const pc = this.pc!
     for (const item of items) this.pendingTrackOwners.set(item.trackName, { connectionId: item.connectionId, kind: item.kind })
 
-    const failed: typeof items = []
+    const failed: SubscriptionItem[] = []
 
     await this.runExclusive(async () => {
       const data = await postJson<{
@@ -869,7 +1128,7 @@ export class SFUClient {
         requiresImmediateRenegotiation: boolean
         tracks?: { mid?: string | null; trackName?: string }[]
       }>(`/api/rooms/${this.roomId}/sfu/subscribe`, {
-        connectionId: this.connectionId,
+        ...this.auth(),
         tracks: items.map((i) => ({
           sessionId: i.sessionId,
           trackName: i.trackName,
@@ -900,7 +1159,7 @@ export class SFUClient {
         const localDescription = pc.localDescription!
         await postJson(
           `/api/rooms/${this.roomId}/sfu/renegotiate`,
-          { connectionId: this.connectionId, answer: { type: localDescription.type, sdp: localDescription.sdp } },
+          { ...this.auth(), answer: { type: localDescription.type, sdp: localDescription.sdp } },
           'PUT'
         )
       }
@@ -926,10 +1185,7 @@ export class SFUClient {
   // error visible. Ahora se reintenta con las esperas de
   // UNCAPPED_RETRY_DELAYS_MS mientras ese track siga publicado por la misma
   // sesión, sin bloquear join().
-  private retryUncappedLater(
-    items: { sessionId: string; trackName: string; connectionId: string; kind: Kind }[],
-    attempt: number
-  ): void {
+  private retryUncappedLater(items: SubscriptionItem[], attempt: number): void {
     const delay = UNCAPPED_RETRY_DELAYS_MS[attempt]
     if (delay === undefined) {
       console.warn('[sfu] sin suscripción después de varios intentos:', items.map((i) => i.trackName))
@@ -1024,7 +1280,7 @@ export class SFUClient {
       const data = await postJson<{ sessionDescription: { type: 'answer'; sdp: string } }>(
         `/api/rooms/${this.roomId}/sfu/publish`,
         {
-          connectionId: this.connectionId,
+          ...this.auth(),
           offer: { type: localDescription.type, sdp: localDescription.sdp },
           tracks: [{ mid, trackName, kind }],
         }
@@ -1040,7 +1296,7 @@ export class SFUClient {
     // reintentar ni romper el toggle local por esto.
     await postJson(
       `/api/rooms/${this.roomId}/sfu/media-state`,
-      { connectionId: this.connectionId, camOn: this.camOn, micOn: this.micOn },
+      { ...this.auth(), camOn: this.camOn, micOn: this.micOn },
       'PUT'
     ).catch(() => {})
   }
@@ -1073,7 +1329,7 @@ export class SFUClient {
         const data = await postJson<{ sessionDescription: { type: 'answer'; sdp: string } }>(
           `/api/rooms/${this.roomId}/sfu/publish`,
           {
-            connectionId: this.connectionId,
+            ...this.auth(),
             offer: { type: localDescription.type, sdp: localDescription.sdp },
             tracks: [{ mid: transceiver.mid, trackName, kind: 'screen' }],
           }
@@ -1098,7 +1354,7 @@ export class SFUClient {
     await this.runExclusive(async () => {
       await postJson(
         `/api/rooms/${this.roomId}/sfu/screen-share/stop`,
-        { connectionId: this.connectionId, mid: transceiver.mid },
+        { ...this.auth(), mid: transceiver.mid },
         'PUT'
       )
     })
