@@ -1,0 +1,76 @@
+name = "meets-backend"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+# ---------------------------------------------------------------------------
+# Durable Objects: un RoomSession por sala activa (id de sala = id del DO,
+# vía idFromName). Ver src/roomSession.ts.
+# ---------------------------------------------------------------------------
+[[durable_objects.bindings]]
+name = "ROOM_SESSION"
+class_name = "RoomSession"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RoomSession"]
+
+# ---------------------------------------------------------------------------
+# D1: rooms / users / attendance. Crea la base local con:
+#   wrangler d1 create meets-db
+# y pega el database_id que te devuelva aquí abajo.
+# ---------------------------------------------------------------------------
+[[d1_databases]]
+binding = "DB"
+database_name = "meets-db"
+database_id = "81fb65fc-be6c-4478-a267-2c02f3cbcff3"
+migrations_dir = "../migrations"
+# ---------------------------------------------------------------------------
+# Vars no sensibles. El App ID de Cloudflare Realtime NO es secreto (va en el
+# path de la URL de la API), pero el App Token/Secret sí lo es -> nunca aquí.
+#
+# Secrets necesarios (nunca en este archivo, nunca en el repo):
+#   echo <APP_SECRET> | npx wrangler secret put CALLS_APP_SECRET
+#
+# Opcional (credenciales TURN separadas; si no se configuran, el backend usa
+# STUN público de Cloudflare como fallback — suficiente para la prueba local
+# de esta semana):
+#   echo <TURN_TOKEN_ID> | npx wrangler secret put TURN_TOKEN_ID
+#   echo <TURN_TOKEN_SECRET> | npx wrangler secret put TURN_TOKEN_SECRET
+#
+# Semana 2 (registro previo): firma la credencial de sesión que protege el
+# WebSocket de la sala. Nunca en este archivo:
+#   echo <SECRETO_ALEATORIO> | npx wrangler secret put SESSION_SIGNING_SECRET
+# ---------------------------------------------------------------------------
+[vars]
+CALLS_APP_ID = "638729c3a45f4ce829ea0ae328ef4e1d"
+CALLS_API_BASE_URL = "https://rtc.live.cloudflare.com/v1"
+MAX_ACTIVE_ROOMS = "7"
+# Origen del frontend: se usa para armar el link de sala que devuelve
+# POST /api/rooms. Cambiar al dominio real antes de deployar a producción.
+FRONTEND_BASE_URL = "http://localhost:5173"
+# Máximo de tracks de VIDEO simultáneos que un cliente puede tener suscritos
+# (modelo Meet: hasta 10 cuadritos visibles). No aplica a audio -- el audio
+# de todos los participantes siempre llega, sin capar (lo necesita el active
+# speaker de Semana/Parte B). Se valida en el Durable Object (roomSession.ts),
+# no solo en el frontend.
+MAX_VISIBLE_TILES = "10"
+# Simulcast (Parte C): resolución objetivo (alto en px) y bitrate máximo (bps)
+# de cada una de las dos capas que publica cada cliente. "Objetivo" porque
+# sendEncodings del navegador solo acepta un factor de escala relativo a la
+# resolución YA CAPTURADA por la cámara (scaleResolutionDownBy), no un ancho x
+# alto absoluto -- estos valores se usan para calcular ese factor en el
+# momento de publicar (ver frontend/src/sfu.ts). Bajarlos acá si el costo de
+# egress sube más de lo esperado -- nunca hardcodeados en el frontend.
+SIMULCAST_LOW_HEIGHT = "180"
+SIMULCAST_LOW_MAX_BITRATE_BPS = "150000"
+SIMULCAST_HIGH_HEIGHT = "720"
+SIMULCAST_HIGH_MAX_BITRATE_BPS = "1500000"
+# Parte D: pantalla compartida siempre en una sola capa de calidad alta (no aplica la
+# lógica de simulcast de arriba), y ventana de gracia para fusionar una reconexión
+# rápida con la fila de attendance anterior en vez de duplicarla.
+SCREEN_SHARE_MAX_BITRATE_BPS = "2500000"
+ATTENDANCE_GRACE_WINDOW_MS = "90000"
+
+[dev]
+port = 8787

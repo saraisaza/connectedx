@@ -1,0 +1,26 @@
+/* Único CSS global del app -- solo lo que un `style` inline no puede
+   expresar (pseudo-elementos, keyframes). Todo lo demás vive en theme.ts
+   y se aplica vía inline styles. Ver frontend/src/README.md. */
+
+html {
+  background: #08080a;
+}
+
+body {
+  margin: 0;
+  background: #08080a;
+}
+
+input::placeholder {
+  color: #5f5f69;
+}
+
+@keyframes livePulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}

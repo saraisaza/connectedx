@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous"/>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=DM+Sans:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+  html { background: #08080A; }
+  body { margin: 0; background: #08080A; min-width: max-content; }
+  a { color: #FFC220; text-decoration: none; }
+  a:hover { color: #FFD866; }
+  input::placeholder { color: #5F5F69; }
+  @keyframes livePulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+</style>
+</helmet>
+
+<section style="padding: 60px 72px 110px; display: flex; flex-direction: column; gap: 48px; background: #08080A; font-family: 'DM Sans', sans-serif; color: #F5F5F0;">
+  <div style="display: flex; flex-direction: column; gap: 10px;">
+    <div style="font: 500 11px 'IBM Plex Mono', monospace; letter-spacing: .18em; text-transform: uppercase; color: #8A8A93;">Turno 1 &middot; App de meets Enactus Colombia &middot; escritorio 1440</div>
+    <h1 style="margin: 0; font: 400 44px Anton, sans-serif; letter-spacing: .01em; text-transform: uppercase; color: #F7F7F2;">Sala de registro <span style="color: #FFC220;">+</span> reunión</h1>
+    <div style="max-width: 640px; font-size: 15px; line-height: 1.55; color: #9B9BA3; text-wrap: pretty;">Dos layouts para comparar: <a href="#1a">1a</a> apuesta por el split oscuro con preview grande, <a href="#1b">1b</a> por bloques amarillos planos. Mismo sistema: amarillo #FFC220, Anton para titulares, mono para etiquetas.</div>
+  </div>
+
+  <div style="display: flex; gap: 88px; flex-wrap: wrap; align-items: flex-start;">
+
+    <div id="1a" style="width: 1440px; display: flex; flex-direction: column; gap: 30px;">
+      <div style="display: flex; align-items: baseline; gap: 16px;">
+        <span style="font: 500 12px 'IBM Plex Mono', monospace; letter-spacing: .1em; background: #FFC220; color: #15150F; padding: 5px 11px; border-radius: 999px;">1a</span>
+        <span style="font: 400 26px Anton, sans-serif; text-transform: uppercase; letter-spacing: .02em;">Split oscuro</span>
+        <span style="font-size: 14px; color: #85858E;">preview a la izquierda, registro fijo a la derecha</span>
+      </div>
+
+      <div style="font: 500 11px 'IBM Plex Mono', monospace; letter-spacing: .18em; text-transform: uppercase; color: #6E6E78;">A1 &middot; Pre-join / registro</div>
+      <div data-screen-label="A1 Pre-join" style="width: 1440px; height: 880px; border-radius: 16px; overflow: hidden; background: #0D0D10; border: 1px solid #24242A; box-shadow: 0 40px 80px -40px rgba(0,0,0,.9); display: flex; flex-direction: column;">
+
+        <div style="height: 78px; flex: none; display: flex; align-items: center; justify-content: space-between; padding: 0 34px; background: #101014; border-bottom: 1px solid #24242A;">
+          <div style="display: flex; align-items: center; gap: 22px;">
+            <img src="assets/enactus-logo.avif" alt="Enactus Colombia" style="height: 44px; display: block;"/>
+            <div style="width: 1px; height: 26px; background: #2C2C33;"></div>
+            <div style="font: 500 11px 'IBM Plex Mono', monospace; letter-spacing: .18em; text-transform: uppercase; color: #8A8A93;">Sala ENC&#8209;2026</div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 26px;">
+            <div style="font: 500 12px 'IBM Plex Mono', monospace; letter-spacing: .08em; color: #9B9BA3;">19:00 &middot; GMT-5</div>
+            <div style="display: flex; align-items: center; gap: 9px; background: rgba(255,194,32,.12); border: 1px solid rgba(255,194,32,.35); border-radius: 999px; padding: 7px 14px;">
+              <span style="width: 7px; height: 7px; border-radius: 999px; background: #FFC220; animation: livePulse 2s ease-in-out infinite;"></span>
+              <span style="font: 500 11px 'IBM Plex Mono', monospace; letter-spacing: .16em; text-transform: uppercase; color: #FFC220;">Sala abierta</span>
+            </div>
+            <div style="font-size: 14px; color: #85858E;">Ayuda</div>
+          </div>
+        </div>
+
+        <div style="flex: 1; display: grid; grid-template-columns: 1fr 480px; min-height: 0;">
+
+          <div style="position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 26px; padding: 44px 56px; background-color: #0D0D10; background-image: repeating-linear-gradient(115deg, rgba(255,194,32,.05) 0 2px, rgba(0,0,0,0) 2px 16px);">
+            <div style="width: 100%; max-width: 720px; position: relative; aspect-ratio: 16 / 9; border: 4px solid #FFC220; border-radius: 18px; overflow: hidden; background: #15151A; box-shadow: 0 30px 70px -35px rgba(255,194,32,.45);">
+              <sc-if value="{{ camOn }}" hint-placeholder-val="{{ true }}">
+                <div style="position: absolute; inset: 0; background-color: #16161B; background-image: repeating-linear-gradient(115deg, rgba(255,255,255,.045) 0 2px, rgba(0,0,0,0) 2px 13px); display: flex; align-items: center; justify-content: center;">
+                  <span style="font: 500 12px 'IBM Plex Mono', monospace; letter-spacing: .2em; text-transform: uppercase; color: #6E6E78;">Video propio 16:9</span>
+                </div>
+              </sc-if>
+              <sc-if value="{{ camOff }}" hint-placeholder-val="{{ false }}">
+                <div style="position: absolute; inset: 0; background: #16161B; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;">
+                  <div style="width: 108px; height: 108px; border-radius: 999px; border: 3px solid #FFC220; display: flex; align-items: center; justify-content: center; font: 400 40px Anton, sans-serif; color: #FFC220;">MR</div>
+                  <span style="font: 500 11px 'IBM Plex Mono', monospace; letter-spacing: .2em; text-transform: uppercase; color: #6E6E78;">Cámara apagada</span>
+                </div>
+              </sc-if>
+              <div style="position: absolute; left: 18px; bottom: 18px; display: flex; align-items: center; gap: 10px; background: rgba(10,10,12,.82); backdrop-filter: blur(6px); border-radius: 999px; padding: 8px 15px;">
+                <span style="width: 7px; height: 7px; border-radius: 999px; background: {{ micDot }};"></span>
+                <span style="font-size: 13px; font-weight: 500; color: #F5F5F0;">Tú &middot; María Restrepo</span>
+              </div>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <button onClick="{{ toggleMic }}" style="display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 20px; border: none; border-radius: 999px; cursor: pointer; font: 500 12px 'IBM Plex Mono', monospace; letter-spacing: .12em; text-transform: uppercase; background: {{ micBg }}; color: {{ micFg }};">
+                <span style="width: 7px; height: 7px; border-radius: 999px; background: currentColor;"></span>{{ micLabel }}
+              </button>
+              <button onClick="{{ toggleCam }}" style="display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 20px; border: none; border-radius: 999px; cursor: pointer; font: 500 12px 'IBM Plex Mono', monospace; letter-spacing: .12em; text-transform: uppercase; background: {{ camBg }}; color: {{ camFg }};">
+                <span style="width: 8px; height: 8px; border-radius: 2px; background: currentColor;"></span>{{ camLabel }}
+              </button>
+              <div style="display: flex; align-items: center; height: 48px; padding: 0 20px; border-radius: 999px; background: #17171C; border: 1px solid #26262C; font: 500 12px 'IBM Plex Mono', monospace; letter-spacing: .12em; text-transform: uppercase; color: #9B9BA3; cursor: pointer;" style-hover="border-color: #FFC220; color: #FFC220;">Dispositivos</div>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 14px; margin-top: 6px;">
+              <div style="display: flex;">
+                <div style="width: 34px; height: 34px; border-radius: 999px; background: #FFC220; color: #15150F; display: flex; align-items: center; justify-content: center; font: 500 12px 'IBM Plex Mono', monospace; border: 2px solid #0D0D10;">VR</div>
+                <div style="width: 34px; height: 34px; border-radius: 999px; background: #2A2A31; color: #E8E8E2; display: flex; align-items: center; justify-content: center; font: 500 12px 'IBM Plex Mono', monospace; border: 2px solid #0D0D10; margin-left: -10px;">JC</div>
+                <div style="width: 34px; height: 34px; border-radius: 999px; background: #2A2A31; color: #E8E8E2; display: flex; align-items: center; justify-content: center; font: 500 12px 'IBM Plex Mono', monospace; border: 2px solid #0D0D10; margin-left: -10px;">LP</div>
+                <div style="width: 34px; height: 34px; border-radius: 999px; background: #17171C; color: #9B9BA3; display: flex; align-items: center; justify-content: center; font: 500 11px 'IBM Plex Mono', monospace; border: 2px solid #0D0D10; margin-left: -10px;">+9</div>
+              </div>
+              <span style="font-size: 14px; color: #85858E;">12 personas ya están dentro</span>
+            </div>
+          </div>
+
+          <div style="background: #131317; border-left: 1px solid #24242A; padding: 46px 44px; display: flex; flex-direction: column; gap: 26px; overflow: hidden;">
+            <div style="display: flex; flex-direction: column; gap: 14px;">
+              <div style="font: 500 11px 'IBM Plex Mono', monospace; letter-spacing: .2em; text-transform: uppercase; color: #FFC220;">Registro de asistencia</div>
+              <div style="font: 400 52px Anton, sans-serif; line-height: .9; text-transform: uppercase; color: #F7F7F2;">Comité<br/>Nacional</div>
+              <div style="font-size: 15px; line-height: 1.5; color: #9B9BA3; text-wrap: pretty;">Preparación Copa Enactus Colombia 2026. Anfitriona: Valentina Ríos.</div>
+            </div>
+
+            <div style="height: 1px; background: #24242A;"></div>
+
+            <sc-if value="{{ guestFlow }}" hint-placeholder-val="{{ true }}">
+              <div style="display: flex; flex-direction: column; gap: 10px;">
+                <div style="font: 500 11px 'IBM Plex Mono', monospace; letter-spacing: .16em; text-transform: uppercase; color: #85858E;">Entras como</div>
+                <div style="display: flex; gap: 8px; padding: 5px; background: #0F0F13; border: 1px solid #26262C; border-radius: 12px;">
+                  <button onClick="{{ pickMember }}" style="flex: 1; height: 42px; border: none; border-radius: 8px; cursor: pointer; font: 500 12px 'IBM Plex Mono', monospace; letter-spacing: .1em; text-transform: uppercase; background: {{ memberBg }}; color: {{ memberFg }};">Miembro</button>
+                  <button onClick="{{ pickGuest }}" style="flex: 1; height: 42px; border: none; border-radius: 8px; cursor: pointer; font: 500 12px 'IBM Plex Mono', monospace; letter-spacing: .1em; text-transform: uppercase; background: {{ guestBg }}; color: {{ guestFg }};">Invitado</button>
+                </div>
+              </div>
+            </sc-if>
+
+            <div style="display: flex; flex-direction: column; gap: 16px;">
+              <div style="display: flex; flex-direction: column; gap: 8px;">
+                <label style="font: 500 11px 'IBM Plex Mono', monospace; letter-spacing: .16em; text-transform: uppercase; color: #85858E;">Nombre completo</label>
+                <input type="text" placeholder="María Restrepo" style="width: 100%; height: 54px; box-sizing: border-box; padding: 0 16px; background: #0F0F13; border: 1px solid #2E2E36; border-radius: 10px; color: #F5F5F0; font: 400 15px 'DM Sans', sans-serif; outline: none;" style-focus="border-color: #FFC220;"/>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 8px;">
+                <label style="font: 500 11px 'IBM Plex Mono', monospace; letter-spacing: .16em; text-transform: uppercase; color: #85858E;">Correo</label>
+                <input type="email" placeholder="maria@enactuscolombia.org" style="width: 100%; height: 54px; box-sizing: border-box; padding: 0 16px; background: #0F0F13; border: 1px solid #2E2E36; border-radius: 10px; color: #F5F5F0; font: 400 15px 'DM Sans', sans-serif; outline: none;" style-focus="border-color: #FFC220;"/>
+              </div>
+            </div>
+
+            <sc-if value="{{ guestFlow }}" hint-placeholder-val="{{ true }}">
+              <div style="display: flex; align-items: flex-start; gap: 12px;">
+                <div style="width: 20px; height: 20px; flex: none; margin-top: 2px; border-radius: 5px; border: 1px solid #FFC220; background: rgba(255,194,32,.15);"></div>
+                <div style="font-size: 13px; line-height: 1.5; color: #9B9BA3; text-wrap: pretty;">Acepto el código de conducta Enactus y que la sesión se grabe.</div>
+              </div>
+            </sc-if>
+
+            <button style="margin-top: auto; height: 60px; border: none; border-radius: 12px; cursor: pointer; background: #FFC220; color: #15150F; font: 400 24px Anton, sans-serif; letter-spacing: .04em; text-transform: uppercase;" style-hover="background: #FFD24D;">Entrar a la sala</button>
+            <div style="font: 500 11px 'IBM Plex Mono', monospace; letter-spacing: .1em; text-transform: uppercase; color: #6E6E78; text-align: center;">La anfitriona aprueba a los invitados</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="font: 500 11px 'IBM Plex Mono', monospace; letter-spacing: .18em; text-transform: uppercase; color: #6E6E78; margin-top: 14px;">A2 &middot; Sala en vivo</div>
+      <div data-screen-label="A2 Sala en vivo" style="width: 1440px; height: 880px; border-radius: 16px; overflow: hidden; background: #0D0D10; border: 1px solid #24242A; box-shadow: 0 40px 80px -40px rgba(0,0,0,.9); display: flex; flex-direction: column;">
+
+        <div style="height: 78px; flex: none; display: flex; align-items: center; justify-content: space-between; padding: 0 34px; background: #101014; border-bottom: 1px solid #24242A;">
+          <div style="display: flex; align-items: center; gap: 22px;">
+            <img src="assets/enactus-logo.avif" alt="Enactus Colombia" style="height: 44px; display: block;"/>
+            <div style="width: 1px; height: 26px; background: #2C2C33;"></div>
+            <div style="font-size: 15px; font-weight: 500; color: #F5F5F0;">Comité Nacional</div>
+            <div style="display: flex; align-items: center; gap: 9px; background: rgba(240,86,60,.14); border: 1px solid rgba(240,86,60,.4); border-radius: 999px; padding: 6px 13px;">
+              <span style="width: 7px; height: 7px; border-radius: 999px; background: #F0563C; animation: livePulse 1.6s ease-in-out infinite;"></span>
+              <span style="font: 500 11px 'IBM Plex Mono', monospace; letter-spacing: .16em; text-transform: uppercase; color: #F0563C;">En vivo 24:08</span>
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 22px;">
+            <div style="font: 500 12px 'IBM Plex Mono', monospace; letter-spacing: .1em; color: #9B9BA3;">12 participantes</div>
+            <div style="display: flex; align-items: center; height: 40px; padding: 0 16px; border-radius: 999px; border: 1px solid #2E2E36; font: 500 11px 'IBM Plex Mono', monospace; letter-spacing: .14em; text-transform: uppercase; color: #9B9BA3; cursor: pointer;" style-hover="border-color: #FFC220; color: #FFC220;">Invitar</div>
+          </div>
+        </div>
+
+        <div style="flex: 1; min-height: 0; padding: 30px 34px; background-color: #0D0D10; background-image: repeating-linear-gradient(115deg, rgba(255,194,32,.04) 0 2px, rgba(0,0,0,0) 2px 18px);">
+          <sc-if value="{{ spotlight }}" hint-placeholder-val="{{ true }}">
+            <div style="height: 100%; display: grid; grid-template-columns: 1fr 296px; gap: 22px; min-height: 0;">
+              <div style="position: relative; border: 5px solid #FFC220; border-radius: 18px; overflow: hidden; background-color: #16161B; background-image: repeating-linear-gradient(115deg, rgba(255,255,255,.045) 0 2px, rgba(0,0,0,0) 2px 13px); box-shadow: 0 30px 70px -35px rgba(255,194,32,.5);">
+                <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;">
+                  <span style="font: 500 13px 'IBM Plex Mono', monospace; letter-spacing: .22em; text-transform: uppercase; color: #6E6E78;">Video del speaker</span>
+                </div>
+                <div style="position: absolute; left: 22px; top: 22px; display: flex; align-items: center; gap: 10px; background: #FFC220; color: #15150F; border-radius: 999px; padding: 8px 16px;">
+                  <span style="width: 7px; height: 7px; border-radius: 999px; background: #15150F;"></span>
+                  <span style="font: 500 11px 'IBM Plex Mono', monospace; letter-spacing: .16em; text-transform: uppercase;">Hablando</span>
+                </div>
+                <div style="position: absolute; left: 22px; bottom: 22px; display: flex; flex-direction: column; gap: 4px; background: rgba(10,10,12,.82); backdrop-filter: blur(6px); border-radius: 14px; padding: 12px 18px;">
+                  <span style="font: 400 26px Anton, sans-serif; text-transform: uppercase; color: #F7F7F2;">Valentina Ríos</span>
+                  <span style="font: 500 11px 'IBM Plex Mono', monospace; letter-spacing: .16em; text-transform: uppercase; color: #FFC220;">Anfitriona &middot; Enactus Uniandes</span>
+                </div>
+              </div>
+
+              <div style="display: flex; flex-direction: column; gap: 14px; min-height: 0;">
+                <div style="position: relative; aspect-ratio: 16 / 9; border-radius: 12px; border: 1px solid #2A2A31; overflow: hidden; background-color: #14141A; background-image: repeating-linear-gradient(115deg, rgba(255,255,255,.035) 0 2px, rgba(0,0,0,0) 2px 13px);">
+                  <span style="position: absolute; left: 12px; bottom: 11px; font-size: 13px; font-weight: 500; color: #E8E8E2;">Juan Camilo</span>
+                </div>
+                <div style="position: relative; aspect-ratio: 16 / 9; border-radius: 12px; border: 1px solid #2A2A31; overflow: hidden; background: #14141A; display: flex; align-items: center; justify-content: center;">
+                  <div style="width: 58px; height: 58px; border-radius: 999px; border: 2px solid #FFC220; display: flex; align-items: center; justify-content: center; font: 400 20px Anton, sans-serif; color: #FFC220;">LP</div>
+                  <span style="position: absolute; left: 12px; bottom: 11px; font-size: 13px; font-weight: 500; color: #E8E8E2;">Laura P.</span>
+                </div>
+                <div style="position: relative; aspect-ratio: 16 / 9; border-radius: 12px; border: 1px solid #2A2A31; overflow: hidden; background-color: #14141A; background-image: repeating-linear-gradient(115deg, rgba(255,255,255,.035) 0 2px, rgba(0,0,0,0) 2px 13px);">
+                  <span style="position: absolute; left: 12px; bottom: 11px; font-size: 13px; font-weight: 500; color: #E8E8E2;">Tú</span>
+                  <span style="position: absolute; right: 12px; top: 11px; font: 500 10px 'IBM Plex Mono', monospace; letter-spacing: .14em; text-transform: uppercase; color: #FFC220;">Mano ↑</span>
+                </div>
+                <div style="flex: 1; min-height: 74px; border-radius: 12px; border: 1px dashed #2E2E36; display: flex; align-items: center; justify-content: center; font: 500 11px 'IBM Plex Mono', monospace; letter-spacing: .16em; text-transform: uppercase; color: #6E6E78; cursor: pointer;" style-hover="border-color: #FFC220; color: #FFC220;">+8 participantes</div>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ gridView }}" hint-placeholder-val="{{ false }}">
+            <div style="height: 100%; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 20px;">
+              <div style="position: relative; border: 5px solid #FFC220; border-radius: 16px; overflow: hidden; background-color: #16161B; background-image: repeating-linear-gradient(115deg, rgba(255,255,255,.045) 0 2px, rgba(0,0,0,0) 2px 13px); box-shadow: 0 24px 60px -30px rgba(255,194,32,.45);">
+                <span style="position: absolute; left: 18px; bottom: 16px; font: 400 22px Anton, sans-serif; text-transform: uppercase; color: #F7F7F2;">Valentina Ríos</span>
+                <span style="position: absolute; left: 18px; top: 16px; font: 500 10px 'IBM Plex Mono', monospace; letter-spacing: .16em; text-transform: uppercase; background: #FFC220; color: #15150F; padding: 5px 10px; border-radius: 999px;">Hablando</span>
+              </div>
+              <div style="position: relative; border: 1px solid #2A2A31; border-radius: 16px; overflow: hidden; background-color: #14141A; background-image: repeating-linear-gradient(115deg, rgba(255,255,255,.035) 0 2px, rgba(0,0,0,0) 2px 13px);">
+                <span style="position: absolute; left: 18px; bottom: 16px; font-size: 15px; font-weight: 500; color: #E8E8E2;">Juan Camilo</span>
+              </div>
+              <div style="position: relative; border: 1px solid #2A2A31; border-radius: 16px; overflow: hidden; background: #14141A; display: flex; align-items: center; justify-content: center;">
+                <div style="width: 72px; height: 72px; border-radius: 999px; border: 3px solid #FFC220; display: flex; align-items: center; justify-content: center; font: 400 26px Anton, sans-serif; color: #FFC220;">LP</div>
+                <span style="position: absolute; left: 18px; bottom: 16px; font-size: 15px; font-weight: 500; color: #E8E8E2;">Laura P.</span>
+              </div>
+              <div style="position: relative; border: 1px solid #2A2A31; border-radius: 16px; overflow: hidden; background-color: #14141A; background-image: repeating-linear-gradient(115deg, rgba(255,255,255,.035) 0 2px, rgba(0,0,0,0) 2px 13px);">
+                <span style="position: absolute; left: 18px; bottom: 16px; font-size: 15px; font-weight: 500; color: #E8E8E2;">Tú</span>
+              </div>
+            </div>
+          </sc-if>
+        </div>
+
+        <div style="height: 96px; flex: none; display: flex; align-items: center; justify-content: center; gap: 12px; background: #101014; border-top: 1px solid #24242A;">
+          <button onClick="{{ toggleMic }}" style="display: flex; align-items: center; gap: 10px; height: 50px; padding: 0 22px; border: none; border-radius: 999px; cursor: pointer; font: 500 12px 'IBM Plex Mono', monospace; letter-spacing: .12em; text-transform: uppercase; background: {{ micBg }}; color: {{ micFg }};">
+            <span style="width: 7px; height: 7px; border-radius: 999px; background: currentColor;"></span>{{ micLabel }}
+          </button>
+          <button onClick="{{ toggleCam }}" style="display: flex; align-items: center; gap: 10px; height: 50px; padding: 0 22px; border: none; border-radius: 999px; cursor: pointer; font: 500 12px 'IBM Plex Mono', monospace; letter-spacing: .12em; text-transform: uppercase; background: {{ camBg }}; color: {{ camFg }};">
+            <span style="width: 8px; height: 8px; border-radius: 2px; background: currentColor;"></span>{{ camLabel }}
+          </button>
+          <div style="display: flex; align-items: center; height: 50px; padding: 0 22px; border-radius: 999px; background: #17171C; border: 1px solid #26262C; font: 500 12px 'IBM Plex Mono', monospace; letter-spacing: .12em; text-transform: uppercase; color: #9B9BA3; cursor: pointer;" style-hover="border-color: #FFC220; color: #FFC220;">Compartir</div>
+          <button onClick="{{ toggleHand }}" style="display: flex; align-items: center; gap: 10px; height: 50px; padding: 0 22px; border: none; border-radius: 999px; cursor: pointer; font: 500 12px 'IBM Plex Mono', monospace; letter-spacing: .12em; text-transform: uppercase; background: {{ handBg }}; color: {{ handFg }};">Mano</button>
+          <div style="display: flex; align-items: center; height: 50px; padding: 0 22px; border-radius: 999px; background: #17171C; border: 1px solid #26262C; font: 500 12px 'IBM Plex Mono', monospace; letter-spacing: .12em; text-transform: uppercase; color: #9B9BA3; cursor: pointer;" style-hover="border-color: #FFC220; color: #FFC220;">Chat</div>
+          <div style="width: 1px; height: 34px; background: #26262C; margin: 0 8px;"></div>
+          <div style="display: flex; align-items: center; height: 50px; padding: 0 24px; border-radius: 999px; background: rgba(240,86,60,.14); border: 1px solid rgba(240,86,60,.45); font: 500 12px 'IBM Plex Mono', monospace; letter-spacing: .12em; text-transform: uppercase; color: #F0563C; cursor: pointer;" style-hover="background: #F0563C; color: #15150F;">Salir</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="1b" style="width: 1440px; display: flex; flex-direction: column; gap: 30px;">
+      <div style="display: flex; align-items: baseline; gap: 16px;">
+        <span style="font: 500 12px 'IBM Plex Mono', monospace; letter-spacing: .1em; background: #FFC220; color: #15150F; padding: 5px 11px; border-radius: 999px;">1b</span>
+        <span style="font: 400 26px Anton, sans-serif; text-transform: uppercase; letter-spacing: .02em;">Bloques amarillos</span>
+        <span style="font-size: 14px; color: #85858E;">panel amarillo pleno, registro en columna centrada</span>
+      </div>
+
+      <div style="font: 500 11px 'IBM Plex Mono', monospace; letter-spacing: .18em; text-transform: uppercase; color: #6E6E78;">B1 &middot; Pre-join / registro</div>
+      <div data-screen-label="B1 Pre-join" style="width: 1440px; height: 880px; border-radius: 16px; overflow: hidden; background: #0D0D10; border: 1px solid #24242A; box-shadow: 0 40px 80px -40px rgba(0,0,0,.9); display: grid; grid-template-columns: 600px 1fr;">
+
+        <div style="position: relative; background-color: #FFC220; background-image: repeating-linear-gradient(115deg, rgba(21,21,15,.08) 0 12px, rgba(0,0,0,0) 12px 34px); padding: 46px 52px; display: flex; flex-direction: column; justify-content: space-between;">
+          <div style="display: inline-flex; align-self: flex-start; background: #15150F; border-radius: 12px; padding: 14px 20px;">
+            <img src="assets/enactus-logo.avif" alt="Enactus Colombia" style="height: 44px; display: block;"/>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 22px;">
+            <div style="font: 500 11px 'IBM Plex Mono', monospace; letter-spacing: .2em; text-transform: uppercase; color: rgba(21,21,15,.62);">Reunión ENC&#8209;2026</div>
+            <div style="font: 400 78px Anton, sans-serif; line-height: .86; text-transform: uppercase; color: #15150F;">Comité<br/>Nacional</div>
+            <div style="font-size: 17px; line-height: 1.5; color: rgba(21,21,15,.78); max-width: 420px; text-wrap: pretty;">Preparación Copa Enactus Colombia 2026. Regístrate antes de entrar: la anfitriona aprueba a los invitados externos.</div>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 14px; border-top: 1px solid rgba(21,21,15,.22); padding-top: 22px;">
+            <div style="display: flex; justify-content: space-between; font: 500 12px 'IBM Plex Mono', monospace; letter-spacing: .1em; text-transform: uppercase; color: #15150F;"><span style="opacity: .6;">Hora</span><span>Hoy 19:00 GMT-5</span></div>
+            <div style="display: flex; justify-content: space-between; font: 500 12px 'IBM Plex Mono', monospace; letter-spacing: .1em; text-transform: uppercase; color: #15150F;"><span style="opacity: .6;">Anfitriona</span><span>Valentina Ríos</span></div>
+            <div style="display: flex; justify-content: space-between; font: 500 12px 'IBM Plex Mono', monospace; letter-spacing: .1em; text-transform: uppercase; color: #15150F;"><span style="opacity: .6;">Duración</span><span>60 minutos</span></div>
+            <div style="display: flex; justify-content: space-between; font: 500 12px 'IBM Plex Mono', monospace; letter-spacing: .1em; text-transform: uppercase; color: #15150F;"><span style="opacity: .6;">Dentro</span><span>12 personas</span></div>
+          </div>
+        </div>
+
+        <div style="background: #0F0F13; padding: 46px 64px; display: flex; flex-direction: column; justify-content: center; gap: 28px; overflow: hidden;">
+          <div style="display: flex; gap: 22px; align-items: stretch;">
+            <div style="position: relative; width: 320px; flex: none; aspect-ratio: 16 / 10; border: 4px solid #FFC220; border-radius: 14px; overflow: hidden; background: #16161B;">
+              <sc-if value="{{ camOn }}" hint-placeholder-val="{{ true }}">
+                <div style="position: absolute; inset: 0; background-image: repeating-linear-gradient(115deg, rgba(255,255,255,.045) 0 2px, rgba(0,0,0,0) 2px 13px); display: flex; align-items: center; justify-content: center;">
+                  <span style="font: 500 11px 'IBM Plex Mono', monospace; letter-spacing: .18em; text-transform: uppercase; color: #6E6E78;">Video propio</span>
+                </div>
+              </sc-if>
+              <sc-if value="{{ camOff }}" hint-placeholder-val="{{ false }}">
+                <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;">
+                  <div style="width: 72px; height: 72px; border-radius: 999px; border: 3px solid #FFC220; display: flex; align-items: center; justify-content: center; font: 400 26px Anton, sans-serif; color: #FFC220;">MR</div>
+                </div>
+              </sc-if>
+            </div>
+            <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 12px;">
+              <div style="font: 500 11px 'IBM Plex Mono', monospace; letter-spacing: .2em; text-transform: uppercase; color: #FFC220;">Tu preview</div>
+              <div style="display: flex; flex-direction: column; gap: 8px;">
+                <button onClick="{{ toggleMic }}" style="display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 18px; border: none; border-radius: 10px; cursor: pointer; font: 500 12px 'IBM Plex Mono', monospace; letter-spacing: .12em; text-transform: uppercase; background: {{ micBg }}; color: {{ micFg }};">
+                  <span style="width: 7px; height: 7px; border-radius: 999px; background: currentColor;"></span>{{ micLabel }}
+                </button>
+                <button onClick="{{ toggleCam }}" style="display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 18px; border: none; border-radius: 10px; cursor: pointer; font: 500 12px 'IBM Plex Mono', monospace; letter-spacing: .12em; text-transform: uppercase; background: {{ camBg }}; color: {{ camFg }};">
+                  <span style="width: 8px; height: 8px; border-radius: 2px; background: currentColor;"></span>{{ camLabel }}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div style="height: 1px; background: #24242A;"></div>
+
+          <sc-if value="{{ guestFlow }}" hint-placeholder-val="{{ true }}">
+            <div style="display: flex; gap: 10px;">
+              <button onClick="{{ pickMember }}" style="flex: 1; height: 66px; border: none; border-radius: 12px; cursor: pointer; text-align: left; padding: 0 20px; font: 500 12px 'IBM Plex Mono', monospace; letter-spacing: .1em; text-transform: uppercase; background: {{ memberBg }}; color: {{ memberFg }};">Miembro Enactus<br/><span style="font-size: 10px; opacity: .7; letter-spacing: .06em;">entras directo</span></button>
+              <button onClick="{{ pickGuest }}" style="flex: 1; height: 66px; border: none; border-radius: 12px; cursor: pointer; text-align: left; padding: 0 20px; font: 500 12px 'IBM Plex Mono', monospace; letter-spacing: .1em; text-transform: uppercase; background: {{ guestBg }}; color: {{ guestFg }};">Invitado externo<br/><span style="font-size: 10px; opacity: .7; letter-spacing: .06em;">requiere aprobación</span></button>
+            </div>
+          </sc-if>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <label style="font: 500 11px 'IBM Plex Mono', monospace; letter-spacing: .16em; text-transform: uppercase; color: #85858E;">Nombre completo</label>
+              <input type="text" placeholder="María Restrepo" style="width: 100%; height: 54px; box-sizing: border-box; padding: 0 16px; background: #16161B; border: 1px solid #2E2E36; border-radius: 10px; color: #F5F5F0; font: 400 15px 'DM Sans', sans-serif; outline: none;" style-focus="border-color: #FFC220;"/>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <label style="font: 500 11px 'IBM Plex Mono', monospace; letter-spacing: .16em; text-transform: uppercase; color: #85858E;">Correo</label>
+              <input type="email" placeholder="maria@enactuscolombia.org" style="width: 100%; height: 54px; box-sizing: border-box; padding: 0 16px; background: #16161B; border: 1px solid #2E2E36; border-radius: 10px; color: #F5F5F0; font: 400 15px 'DM Sans', sans-serif; outline: none;" style-focus="border-color: #FFC220;"/>
+            </div>
+          </div>
+
+          <button style="height: 64px; border: none; border-radius: 12px; cursor: pointer; background: #FFC220; color: #15150F; font: 400 26px Anton, sans-serif; letter-spacing: .04em; text-transform: uppercase;" style-hover="background: #FFD24D;">Entrar a la sala</button>
+
+          <sc-if value="{{ guestFlow }}" hint-placeholder-val="{{ true }}">
+            <div style="display: flex; align-items: flex-start; gap: 12px;">
+              <div style="width: 20px; height: 20px; flex: none; margin-top: 1px; border-radius: 5px; border: 1px solid #FFC220; background: rgba(255,194,32,.15);"></div>
+              <div style="font-size: 13px; line-height: 1.5; color: #9B9BA3; text-wrap: pretty;">Acepto el código de conducta Enactus y que la sesión se grabe.</div>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+
+      <div style="font: 500 11px 'IBM Plex Mono', monospace; letter-spacing: .18em; text-transform: uppercase; color: #6E6E78; margin-top: 14px;">B2 &middot; Sala en vivo</div>
+      <div data-screen-label="B2 Sala en vivo" style="width: 1440px; height: 880px; border-radius: 16px; overflow: hidden; background: #0F0F13; border: 1px solid #24242A; box-shadow: 0 40px 80px -40px rgba(0,0,0,.9); display: flex; flex-direction: column;">
+
+        <div style="height: 70px; flex: none; display: flex; align-items: center; justify-content: space-between; padding: 0 30px; background: #FFC220;">
+          <div style="display: flex; align-items: center; gap: 20px;">
+            <div style="display: flex; background: #15150F; border-radius: 8px; padding: 8px 14px;">
+              <img src="assets/enactus-logo.avif" alt="Enactus Colombia" style="height: 34px; display: block;"/>
+            </div>
+            <div style="font: 400 24px Anton, sans-serif; text-transform: uppercase; color: #15150F;">Comité Nacional</div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 18px;">
+            <div style="display: flex; align-items: center; gap: 9px; background: #15150F; border-radius: 999px; padding: 7px 15px;">
+              <span style="width: 7px; height: 7px; border-radius: 999px; background: #F0563C; animation: livePulse 1.6s ease-in-out infinite;"></span>
+              <span style="font: 500 11px 'IBM Plex Mono', monospace; letter-spacing: .16em; text-transform: uppercase; color: #FFC220;">En vivo 24:08</span>
+            </div>
+            <div style="font: 500 12px 'IBM Plex Mono', monospace; letter-spacing: .1em; text-transform: uppercase; color: rgba(21,21,15,.72);">12 participantes</div>
+          </div>
+        </div>
+
+        <div style="flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr {{ panelCol }}; ">
+          <div style="min-width: 0; padding: 26px 30px; display: flex; flex-direction: column; gap: 20px; background-color: #0F0F13; background-image: repeating-linear-gradient(115deg, rgba(255,194,32,.04) 0 2px, rgba(0,0,0,0) 2px 18px);">
+            <div style="display: flex; gap: 14px; flex: none;">
+              <div style="position: relative; width: 196px; height: 118px; border-radius: 12px; border: 1px solid #2A2A31; overflow: hidden; background-color: #16161B; background-image: repeating-linear-gradient(115deg, rgba(255,255,255,.035) 0 2px, rgba(0,0,0,0) 2px 13px);">
+                <span style="position: absolute; left: 12px; bottom: 10px; font-size: 13px; font-weight: 500; color: #E8E8E2;">Juan Camilo</span>
+              </div>
+              <div style="position: relative; width: 196px; height: 118px; border-radius: 12px; border: 1px solid #2A2A31; overflow: hidden; background: #16161B; display: flex; align-items: center; justify-content: center;">
+                <div style="width: 52px; height: 52px; border-radius: 999px; border: 2px solid #FFC220; display: flex; align-items: center; justify-content: center; font: 400 18px Anton, sans-serif; color: #FFC220;">LP</div>
+                <span style="position: absolute; left: 12px; bottom: 10px; font-size: 13px; font-weight: 500; color: #E8E8E2;">Laura P.</span>
+              </div>
+              <div style="position: relative; width: 196px; height: 118px; border-radius: 12px; border: 1px solid #2A2A31; overflow: hidden; background-color: #16161B; background-image: repeating-linear-gradient(115deg, rgba(255,255,255,.035) 0 2px, rgba(0,0,0,0) 2px 13px);">
+                <span style="position: absolute; left: 12px; bottom: 10px; font-size: 13px; font-weight: 500; color: #E8E8E2;">Tú</span>
+                <span style="position: absolute; right: 10px; top: 9px; font: 500 10px 'IBM Plex Mono', monospace; letter-spacing: .12em; text-transform: uppercase; background: #FFC220; color: #15150F; padding: 4px 8px; border-radius: 999px;">Mano ↑</span>
+              </div>
+              <div style="width: 130px; height: 118px; border-radius: 12px; border: 1px dashed #2E2E36; display: flex; align-items: center; justify-content: center; font: 500 11px 'IBM Plex Mono', monospace; letter-spacing: .14em; text-transform: uppercase; color: #6E6E78; cursor: pointer;" style-hover="border-color: #FFC220; color: #FFC220;">+8 más</div>
+            </div>
+
+            <div style="flex: 1; min-height: 0; position: relative; border: 5px solid #FFC220; border-radius: 18px; overflow: hidden; background-color: #16161B; background-image: repeating-linear-gradient(115deg, rgba(255,255,255,.045) 0 2px, rgba(0,0,0,0) 2px 13px); box-shadow: 0 30px 70px -35px rgba(255,194,32,.5);">
+              <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;">
+                <span style="font: 500 13px 'IBM Plex Mono', monospace; letter-spacing: .22em; text-transform: uppercase; color: #6E6E78;">Video del speaker</span>
+              </div>
+              <div style="position: absolute; left: 0; bottom: 0; display: flex; align-items: center; gap: 16px; background: #FFC220; padding: 14px 26px 14px 22px; border-top-right-radius: 16px;">
+                <span style="font: 400 30px Anton, sans-serif; text-transform: uppercase; color: #15150F;">Valentina Ríos</span>
+                <span style="font: 500 11px 'IBM Plex Mono', monospace; letter-spacing: .14em; text-transform: uppercase; color: rgba(21,21,15,.7);">Anfitriona</span>
+              </div>
+              <div style="position: absolute; right: 22px; top: 22px; display: flex; align-items: center; gap: 9px; background: rgba(10,10,12,.85); border-radius: 999px; padding: 8px 15px;">
+                <span style="width: 7px; height: 7px; border-radius: 999px; background: #FFC220;"></span>
+                <span style="font: 500 11px 'IBM Plex Mono', monospace; letter-spacing: .16em; text-transform: uppercase; color: #FFC220;">Hablando</span>
+              </div>
+            </div>
+          </div>
+
+          <sc-if value="{{ showPanel }}" hint-placeholder-val="{{ true }}">
+            <div style="background: #131317; border-left: 1px solid #24242A; display: flex; flex-direction: column;">
+              <div style="height: 58px; flex: none; display: flex; align-items: center; padding: 0 22px; border-bottom: 1px solid #24242A; font: 500 11px 'IBM Plex Mono', monospace; letter-spacing: .18em; text-transform: uppercase; color: #FFC220;">{{ panelTitle }}</div>
+
+              <sc-if value="{{ isChat }}" hint-placeholder-val="{{ true }}">
+                <div style="flex: 1; display: flex; flex-direction: column; gap: 18px; padding: 22px; overflow: hidden;">
+                  <div style="display: flex; flex-direction: column; gap: 6px;">
+                    <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 24px; height: 24px; border-radius: 999px; background: #FFC220; color: #15150F; display: flex; align-items: center; justify-content: center; font: 500 10px 'IBM Plex Mono', monospace;">VR</span><span style="font-size: 13px; font-weight: 500; color: #F5F5F0;">Valentina</span><span style="font: 500 10px 'IBM Plex Mono', monospace; color: #6E6E78;">19:04</span></div>
+                    <div style="font-size: 14px; line-height: 1.5; color: #C9C9D1; background: #1A1A20; border-radius: 12px; padding: 12px 14px; text-wrap: pretty;">Bienvenidos. Arrancamos con el avance de cada capítulo.</div>
+                  </div>
+                  <div style="display: flex; flex-direction: column; gap: 6px;">
+                    <div style="display: flex; align-items: center; gap: 8px;"><span style="width: 24px; height: 24px; border-radius: 999px; background: #2A2A31; color: #E8E8E2; display: flex; align-items: center; justify-content: center; font: 500 10px 'IBM Plex Mono', monospace;">JC</span><span style="font-size: 13px; font-weight: 500; color: #F5F5F0;">Juan Camilo</span><span style="font: 500 10px 'IBM Plex Mono', monospace; color: #6E6E78;">19:06</span></div>
+                    <div style="font-size: 14px; line-height: 1.5; color: #C9C9D1; background: #1A1A20; border-radius: 12px; padding: 12px 14px; text-wrap: pretty;">Dejo el link del presupuesto en el acta.</div>
+                  </div>
+                  <div style="margin-top: auto; display: flex; gap: 10px;">
+                    <input type="text" placeholder="Escribe un mensaje" style="flex: 1; min-width: 0; height: 48px; box-sizing: border-box; padding: 0 14px; background: #0F0F13; border: 1px solid #2E2E36; border-radius: 10px; color: #F5F5F0; font: 400 14px 'DM Sans', sans-serif; outline: none;" style-focus="border-color: #FFC220;"/>
+                    <div style="width: 48px; height: 48px; flex: none; border-radius: 10px; background: #FFC220; color: #15150F; display: flex; align-items: center; justify-content: center; font: 400 16px Anton, sans-serif; cursor: pointer;">↑</div>
+                  </div>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ isPeople }}" hint-placeholder-val="{{ false }}">
+                <div style="flex: 1; display: flex; flex-direction: column; padding: 12px 0; overflow: hidden;">
+                  <div style="display: flex; align-items: center; gap: 12px; padding: 12px 22px;"><span style="width: 32px; height: 32px; border-radius: 999px; background: #FFC220; color: #15150F; display: flex; align-items: center; justify-content: center; font: 500 11px 'IBM Plex Mono', monospace;">VR</span><span style="flex: 1; font-size: 14px; color: #F5F5F0;">Valentina Ríos</span><span style="font: 500 10px 'IBM Plex Mono', monospace; letter-spacing: .12em; text-transform: uppercase; color: #FFC220;">Anfitriona</span></div>
+                  <div style="display: flex; align-items: center; gap: 12px; padding: 12px 22px;"><span style="width: 32px; height: 32px; border-radius: 999px; background: #2A2A31; color: #E8E8E2; display: flex; align-items: center; justify-content: center; font: 500 11px 'IBM Plex Mono', monospace;">JC</span><span style="flex: 1; font-size: 14px; color: #F5F5F0;">Juan Camilo</span><span style="font: 500 10px 'IBM Plex Mono', monospace; color: #6E6E78;">Miembro</span></div>
+                  <div style="display: flex; align-items: center; gap: 12px; padding: 12px 22px;"><span style="width: 32px; height: 32px; border-radius: 999px; background: #2A2A31; color: #E8E8E2; display: flex; align-items: center; justify-content: center; font: 500 11px 'IBM Plex Mono', monospace;">LP</span><span style="flex: 1; font-size: 14px; color: #F5F5F0;">Laura Peña</span><span style="font: 500 10px 'IBM Plex Mono', monospace; color: #6E6E78;">Miembro</span></div>
+                  <div style="display: flex; align-items: center; gap: 12px; padding: 12px 22px;"><span style="width: 32px; height: 32px; border-radius: 999px; background: #2A2A31; color: #E8E8E2; display: flex; align-items: center; justify-content: center; font: 500 11px 'IBM Plex Mono', monospace;">DS</span><span style="flex: 1; font-size: 14px; color: #F5F5F0;">Daniel Suárez</span><span style="font: 500 10px 'IBM Plex Mono', monospace; letter-spacing: .12em; text-transform: uppercase; color: #FFC220;">Invitado</span></div>
+                  <div style="margin: 14px 22px 0; padding-top: 16px; border-top: 1px solid #24242A; font: 500 11px 'IBM Plex Mono', monospace; letter-spacing: .14em; text-transform: uppercase; color: #6E6E78;">2 esperando aprobación</div>
+                </div>
+              </sc-if>
+            </div>
+          </sc-if>
+        </div>
+
+        <div style="height: 88px; flex: none; display: flex; align-items: center; justify-content: space-between; padding: 0 30px; background: #131317; border-top: 1px solid #24242A;">
+          <div style="font: 500 11px 'IBM Plex Mono', monospace; letter-spacing: .16em; text-transform: uppercase; color: #6E6E78;">Sala ENC&#8209;2026 &middot; grabando</div>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <button onClick="{{ toggleMic }}" style="display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 20px; border: none; border-radius: 10px; cursor: pointer; font: 500 12px 'IBM Plex Mono', monospace; letter-spacing: .12em; text-transform: uppercase; background: {{ micBg }}; color: {{ micFg }};">
+              <span style="width: 7px; height: 7px; border-radius: 999px; background: currentColor;"></span>{{ micLabel }}
+            </button>
+            <button onClick="{{ toggleCam }}" style="display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 20px; border: none; border-radius: 10px; cursor: pointer; font: 500 12px 'IBM Plex Mono', monospace; letter-spacing: .12em; text-transform: uppercase; background: {{ camBg }}; color: {{ camFg }};">
+              <span style="width: 8px; height: 8px; border-radius: 2px; background: currentColor;"></span>{{ camLabel }}
+            </button>
+            <div style="display: flex; align-items: center; height: 48px; padding: 0 20px; border-radius: 10px; background: #1A1A20; border: 1px solid #26262C; font: 500 12px 'IBM Plex Mono', monospace; letter-spacing: .12em; text-transform: uppercase; color: #9B9BA3; cursor: pointer;" style-hover="border-color: #FFC220; color: #FFC220;">Compartir</div>
+            <button onClick="{{ toggleHand }}" style="height: 48px; padding: 0 20px; border: none; border-radius: 10px; cursor: pointer; font: 500 12px 'IBM Plex Mono', monospace; letter-spacing: .12em; text-transform: uppercase; background: {{ handBg }}; color: {{ handFg }};">Mano</button>
+          </div>
+          <div style="display: flex; align-items: center; height: 48px; padding: 0 24px; border-radius: 10px; background: #F0563C; color: #15150F; font: 500 12px 'IBM Plex Mono', monospace; letter-spacing: .12em; text-transform: uppercase; cursor: pointer;" style-hover="background: #FF7A64;">Salir de la sala</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;guestFlow&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Registro&quot;},&quot;viewMode&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Speaker&quot;,&quot;Cuadrícula&quot;],&quot;default&quot;:&quot;Speaker&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Sala en vivo&quot;},&quot;sidePanel&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Chat&quot;,&quot;Participantes&quot;,&quot;Ninguno&quot;],&quot;default&quot;:&quot;Chat&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Sala en vivo&quot;}}">
+class Component extends DCLogic {
+  state = { micOn: true, camOn: true, handOn: false, role: 'member' };
+
+  renderVals() {
+    const { micOn, camOn, handOn, role } = this.state;
+    const on = { bg: '#FFC220', fg: '#15150F' };
+    const off = { bg: '#232329', fg: '#C9C9D1' };
+    const view = this.props.viewMode ?? 'Speaker';
+    const panel = this.props.sidePanel ?? 'Chat';
+    const isChat = panel === 'Chat';
+    const isPeople = panel === 'Participantes';
+    return {
+      camOn, camOff: !camOn,
+      micDot: micOn ? '#FFC220' : '#F0563C',
+      micBg: micOn ? on.bg : off.bg,
+      micFg: micOn ? on.fg : off.fg,
+      micLabel: micOn ? 'Mic activo' : 'Silenciado',
+      camBg: camOn ? on.bg : off.bg,
+      camFg: camOn ? on.fg : off.fg,
+      camLabel: camOn ? 'Cámara' : 'Cámara off',
+      handBg: handOn ? on.bg : off.bg,
+      handFg: handOn ? on.fg : off.fg,
+      memberBg: role === 'member' ? on.bg : 'transparent',
+      memberFg: role === 'member' ? on.fg : '#9B9BA3',
+      guestBg: role === 'guest' ? on.bg : 'transparent',
+      guestFg: role === 'guest' ? on.fg : '#9B9BA3',
+      guestFlow: this.props.guestFlow ?? true,
+      spotlight: view === 'Speaker',
+      gridView: view === 'Cuadrícula',
+      showPanel: isChat || isPeople,
+      isChat, isPeople,
+      panelTitle: isChat ? 'Chat de la sala' : 'Participantes (12)',
+      panelCol: isChat || isPeople ? '340px' : '0px',
+      toggleMic: () => this.setState(s => ({ micOn: !s.micOn })),
+      toggleCam: () => this.setState(s => ({ camOn: !s.camOn })),
+      toggleHand: () => this.setState(s => ({ handOn: !s.handOn })),
+      pickMember: () => this.setState({ role: 'member' }),
+      pickGuest: () => this.setState({ role: 'guest' })
+    };
+  }
+}
+
+</script>
+</body>
+</html>
