@@ -1,4 +1,4 @@
-import { API_BASE, fetchIceServers, postJson } from './api'
+import { API_BASE, ApiError, fetchIceServers, postJson } from './api'
 
 // ---------------------------------------------------------------------------
 // Cliente WebRTC mínimo contra Cloudflare Realtime SFU, hablando siempre a
@@ -225,9 +225,8 @@ export class SFUClient {
   // publish/subscribe/renegotiate no pueden pisarse entre sí.
   private negotiationQueue: Promise<unknown> = Promise.resolve()
 
-  // trackName -> dueño (para poder mapear el evento 'track' del pc, que solo
-  // trae el mid, de vuelta a "quién lo publicó y de qué tipo es").
-  private pendingTrackOwners = new Map<string, { connectionId: string; kind: Kind }>()
+  // mid -> dueño: el evento 'track' del pc solo trae el mid, y esto dice quién
+  // lo publicó y de qué tipo es.
   private midOwners = new Map<string, { connectionId: string; kind: Kind }>()
 
   // Registro de todo track conocido (publicado por alguien), suscrito o no
@@ -311,6 +310,13 @@ export class SFUClient {
   // Semana 4: el servidor avisó por mensaje que cierra la sala; el cierre del
   // WebSocket que sigue no es una desconexión inesperada.
   private expectingRoomClose = false
+  // Semana 4: sube cada vez que esta instancia cambia de sala. Una suscripción
+  // pedida antes del cambio y que termina después trae tracks de la sala
+  // anterior (ver requestSubscription).
+  private roomGeneration = 0
+  // Semana 4: respuesta SDP que no se pudo entregar porque la conexión con la
+  // que se pidió ya no existía (ver sendAnswer). moveTo la manda primero.
+  private pendingAnswer: { type: RTCSdpType; sdp: string } | null = null
 
   private roomId: string
   private userId: string
@@ -378,10 +384,15 @@ export class SFUClient {
     } catch (err) {
       this.setRemoteAudioMuted(false)
       this.expectingRoomClose = wasExpectingClose
-      // Si la conexión vieja ya no está abierta (la sala destino alcanzó a
-      // aceptar el movimiento, o la subsala se cerró), no hay dónde quedarse:
-      // se reconstruye y la reconexión va a donde diga D1.
-      if (!previousWs || previousWs.readyState !== WebSocket.OPEN) this.handleUnexpectedDisconnect()
+      // Si la conexión vieja ya no sirve (la sala destino alcanzó a aceptar el
+      // movimiento, o la subsala se cerró), no hay dónde quedarse: se
+      // reconstruye y la reconexión va a donde diga D1. Una respuesta SDP
+      // pendiente también lo indica: la sala de origen ya dio de baja la
+      // conexión.
+      if (this.pendingAnswer || !previousWs || previousWs.readyState !== WebSocket.OPEN) {
+        this.pendingAnswer = null
+        this.handleUnexpectedDisconnect()
+      }
       throw err
     }
 
@@ -393,13 +404,21 @@ export class SFUClient {
       this.roomId = target.roomId
       this.token = target.token
       this.expectingRoomClose = false
+      this.roomGeneration++
       this.resetRemoteState()
       this.applyHello(opened.hello)
+      // Una respuesta SDP que no llegó con la conexión vieja va antes que
+      // cualquier otro pedido: sin ella, la sesión rechaza todo lo demás. Se
+      // encola acá mismo, antes de ceder el control.
+      const answer = this.pendingAnswer
+      this.pendingAnswer = null
+      const answerDelivered = answer ? this.runExclusive(() => this.putAnswer(answer)) : null
       try {
         previousWs?.close(1000, 'Cambio de sala')
       } catch {
         // ya estaba cerrado (por ejemplo, la subsala se cerró)
       }
+      if (answerDelivered) await answerDelivered
 
       // Se suelta sin renegociar todo lo que se recibía de la sala anterior.
       // La sesión SFU es la misma, así que se pide a través de la sala nueva.
@@ -470,7 +489,6 @@ export class SFUClient {
     this.knownTracks.clear()
     this.trackNameToMid.clear()
     this.midOwners.clear()
-    this.pendingTrackOwners.clear()
     this.subscribedVideoTrackNames.clear()
   }
 
@@ -661,8 +679,12 @@ export class SFUClient {
     await this.unsubscribeItems(items)
 
     for (const item of items) {
-      this.trackNameToMid.delete(item.trackName)
-      this.subscribedVideoTrackNames.delete(item.trackName)
+      // Con nombres de track fijos por persona, esa persona pudo volver y quedar
+      // suscrita con otro mid mientras esto viajaba: ese registro no se toca.
+      if (this.trackNameToMid.get(item.trackName) === item.mid) {
+        this.trackNameToMid.delete(item.trackName)
+        this.subscribedVideoTrackNames.delete(item.trackName)
+      }
       this.midOwners.delete(item.mid)
     }
   }
@@ -1109,27 +1131,41 @@ export class SFUClient {
   // con Playwright: reproducía ~60% de las veces en un join rápido de 2
   // personas antes de este fix.
   private async requestSubscription(items: SubscriptionItem[], retriesLeft = 3): Promise<void> {
+    // Semana 4: si la persona cambia de sala mientras este pedido espera turno
+    // o respuesta, sus tracks son de la sala anterior (ver moveTo).
+    const generation = this.roomGeneration
+
     // Semana 4: Cloudflare acepta hasta MAX_TRACKS_PER_CALL tracks por llamada.
     if (items.length > MAX_TRACKS_PER_CALL) {
       for (let i = 0; i < items.length; i += MAX_TRACKS_PER_CALL) {
+        if (generation !== this.roomGeneration) return
         await this.requestSubscription(items.slice(i, i + MAX_TRACKS_PER_CALL), retriesLeft)
       }
       return
     }
 
     const pc = this.pc!
-    for (const item of items) this.pendingTrackOwners.set(item.trackName, { connectionId: item.connectionId, kind: item.kind })
+    // Semana 4: un track se recibe solo mientras quien lo publica siga en la
+    // sala con la misma conexión (participant-left borra sus knownTracks).
+    const stillPublished = (i: SubscriptionItem) => this.knownTracks.get(i.trackName)?.connectionId === i.connectionId
 
     const failed: SubscriptionItem[] = []
+    const stale: { mid: string; trackName: string }[] = []
 
     await this.runExclusive(async () => {
+      // No alcanzó a salir antes del cambio de sala: ya no corresponde pedirlo.
+      if (generation !== this.roomGeneration) return
+      // Quien publicaba pudo irse, o volver con otra conexión, mientras este
+      // pedido esperaba turno.
+      const toRequest = items.filter(stillPublished)
+      if (toRequest.length === 0) return
       const data = await postJson<{
         sessionDescription: { type: 'offer'; sdp: string }
         requiresImmediateRenegotiation: boolean
         tracks?: { mid?: string | null; trackName?: string }[]
       }>(`/api/rooms/${this.roomId}/sfu/subscribe`, {
         ...this.auth(),
-        tracks: items.map((i) => ({
+        tracks: toRequest.map((i) => ({
           sessionId: i.sessionId,
           trackName: i.trackName,
           kind: i.kind,
@@ -1137,18 +1173,30 @@ export class SFUClient {
         })),
       })
 
+      // La sala cambió mientras volvía la respuesta: estos tracks ya entraron a
+      // la sesión y nadie los tiene registrados. La renegociación se completa
+      // igual (la sesión espera la respuesta) y después se sueltan.
+      // Lo mismo si quien publicaba se fue mientras volvía la respuesta: el
+      // track se suelta en vez de quedar sonando sin dueño.
+      const roomChanged = generation !== this.roomGeneration
+      const requested = new Map(toRequest.map((i) => [i.trackName, i]))
       const confirmedNames = new Set<string>()
       for (const t of data.tracks ?? []) {
         if (!t.mid || !t.trackName) continue
+        const item = requested.get(t.trackName)
+        if (roomChanged || !item || !stillPublished(item)) {
+          stale.push({ mid: t.mid, trackName: t.trackName })
+          continue
+        }
         confirmedNames.add(t.trackName)
-        const owner = this.pendingTrackOwners.get(t.trackName)
-        if (!owner) continue
-        this.midOwners.set(t.mid, owner)
+        this.midOwners.set(t.mid, { connectionId: item.connectionId, kind: item.kind })
         this.trackNameToMid.set(t.trackName, t.mid)
-        if (owner.kind === 'video') this.subscribedVideoTrackNames.add(t.trackName)
+        if (item.kind === 'video') this.subscribedVideoTrackNames.add(t.trackName)
       }
-      for (const item of items) {
-        if (!confirmedNames.has(item.trackName)) failed.push(item)
+      if (!roomChanged) {
+        for (const item of toRequest) {
+          if (!confirmedNames.has(item.trackName) && stillPublished(item)) failed.push(item)
+        }
       }
 
       if (data.requiresImmediateRenegotiation) {
@@ -1157,13 +1205,15 @@ export class SFUClient {
         await pc.setLocalDescription(answer)
         await waitForIceGatheringComplete(pc)
         const localDescription = pc.localDescription!
-        await postJson(
-          `/api/rooms/${this.roomId}/sfu/renegotiate`,
-          { ...this.auth(), answer: { type: localDescription.type, sdp: localDescription.sdp } },
-          'PUT'
-        )
+        await this.sendAnswer({ type: localDescription.type, sdp: localDescription.sdp }, generation)
       }
     })
+
+    if (stale.length > 0) {
+      console.info(`[sfu] se soltaron tracks que llegaron cuando ya no correspondían (cambio de sala o quien publicaba se fue): ${stale.map((s) => s.trackName).join(', ')}`)
+      await this.unsubscribeItems(stale).catch(() => {})
+    }
+    if (generation !== this.roomGeneration) return
 
     // Video: reintentos cortos, como antes (App.tsx vuelve a pedir lo que falte
     // en su próximo diff). Audio y pantalla no tienen otro camino para volver
@@ -1174,7 +1224,35 @@ export class SFUClient {
     if (failedUncapped.length > 0 && retriesLeft > 0) this.retryUncappedLater(failedUncapped, 0)
     if (failedVideo.length > 0 && retriesLeft > 0) {
       await new Promise((resolve) => setTimeout(resolve, 700))
+      // Un cambio de sala durante la espera deja estos videos en la sala anterior.
+      if (generation !== this.roomGeneration) return
       await this.requestSubscription(failedVideo, retriesLeft - 1)
+    }
+  }
+
+  private putAnswer(answer: { type: RTCSdpType; sdp: string }): Promise<unknown> {
+    return postJson(`/api/rooms/${this.roomId}/sfu/renegotiate`, { ...this.auth(), answer }, 'PUT')
+  }
+
+  // Semana 4: la respuesta SDP es de la sesión, no de la conexión con la que se
+  // pidió. Si esa conexión dejó de existir mientras tanto (la sala de origen la
+  // dio de baja por un cambio de sala, o se cerró la subsala), se entrega con la
+  // conexión nueva: sin respuesta, la sesión queda esperándola y rechaza cada
+  // pedido siguiente ("expecting a remote answer").
+  private async sendAnswer(answer: { type: RTCSdpType; sdp: string }, generation: number): Promise<void> {
+    try {
+      await this.putAnswer(answer)
+    } catch (err) {
+      const connectionGone = err instanceof ApiError && (err.status === 409 || err.status === 403)
+      if (!connectionGone) throw err
+      // Ya cambió de sala mientras volvía el error: this.auth() es la conexión nueva.
+      if (generation !== this.roomGeneration) {
+        await this.putAnswer(answer)
+        return
+      }
+      // Todavía no llegó el hello de la sala destino: la manda moveTo.
+      if (!this.expectingRoomClose) throw err
+      this.pendingAnswer = answer
     }
   }
 
