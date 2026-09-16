@@ -1159,19 +1159,31 @@ export class SFUClient {
       // pedido esperaba turno.
       const toRequest = items.filter(stillPublished)
       if (toRequest.length === 0) return
-      const data = await postJson<{
+      let data: {
         sessionDescription: { type: 'offer'; sdp: string }
         requiresImmediateRenegotiation: boolean
         tracks?: { mid?: string | null; trackName?: string }[]
-      }>(`/api/rooms/${this.roomId}/sfu/subscribe`, {
-        ...this.auth(),
-        tracks: toRequest.map((i) => ({
-          sessionId: i.sessionId,
-          trackName: i.trackName,
-          kind: i.kind,
-          ...(i.preferredRid ? { preferredRid: i.preferredRid } : {}),
-        })),
-      })
+      }
+      try {
+        data = await postJson(`/api/rooms/${this.roomId}/sfu/subscribe`, {
+          ...this.auth(),
+          tracks: toRequest.map((i) => ({
+            sessionId: i.sessionId,
+            trackName: i.trackName,
+            kind: i.kind,
+            ...(i.preferredRid ? { preferredRid: i.preferredRid } : {}),
+          })),
+        })
+      } catch (err) {
+        // La sesión quedó esperando una respuesta SDP que se perdió: ya no
+        // acepta tracks nuevos y esa oferta no se puede recuperar. Insistir es
+        // inútil; se reconstruye la conexión (App.tsx arma una instancia nueva).
+        if (err instanceof ApiError && err.status === 502 && /expecting a remote answer/i.test(err.detail ?? '')) {
+          console.warn('[sfu] la sesión quedó esperando una respuesta SDP; se reconstruye la conexión')
+          this.handleUnexpectedDisconnect()
+        }
+        throw err
+      }
 
       // La sala cambió mientras volvía la respuesta: estos tracks ya entraron a
       // la sesión y nadie los tiene registrados. La renegociación se completa
@@ -1240,19 +1252,30 @@ export class SFUClient {
   // conexión nueva: sin respuesta, la sesión queda esperándola y rechaza cada
   // pedido siguiente ("expecting a remote answer").
   private async sendAnswer(answer: { type: RTCSdpType; sdp: string }, generation: number): Promise<void> {
-    try {
-      await this.putAnswer(answer)
-    } catch (err) {
-      const connectionGone = err instanceof ApiError && (err.status === 409 || err.status === 403)
-      if (!connectionGone) throw err
-      // Ya cambió de sala mientras volvía el error: this.auth() es la conexión nueva.
-      if (generation !== this.roomGeneration) {
+    // Mientras esta respuesta no llegue, la sesión rechaza todo pedido nuevo
+    // ("expecting a remote answer"), así que una falla transitoria se reintenta
+    // en vez de abandonarla: con 16 entradas casi simultáneas, abandonarla dejó
+    // sesiones que ya no pudieron suscribirse a nada.
+    for (let intento = 0; ; intento++) {
+      try {
         await this.putAnswer(answer)
         return
+      } catch (err) {
+        const connectionGone = err instanceof ApiError && (err.status === 409 || err.status === 403)
+        if (connectionGone) {
+          // Ya cambió de sala mientras volvía el error: this.auth() es la conexión nueva.
+          if (generation !== this.roomGeneration) {
+            await this.putAnswer(answer)
+            return
+          }
+          // Todavía no llegó el hello de la sala destino: la manda moveTo.
+          if (!this.expectingRoomClose) throw err
+          this.pendingAnswer = answer
+          return
+        }
+        if (intento >= 2 || this.isDisconnected()) throw err
+        await new Promise((resolve) => setTimeout(resolve, 300 * (intento + 1)))
       }
-      // Todavía no llegó el hello de la sala destino: la manda moveTo.
-      if (!this.expectingRoomClose) throw err
-      this.pendingAnswer = answer
     }
   }
 

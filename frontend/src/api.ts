@@ -5,7 +5,11 @@ export const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ??
 export class ApiError extends Error {
   constructor(
     message: string,
-    public status: number
+    public status: number,
+    // Texto largo del backend cuando lo hay (por ejemplo el de Cloudflare
+    // Realtime). `message` sigue siendo el código, que es lo que mapea la UI a
+    // un mensaje en español; el detalle sirve para distinguir fallas entre sí.
+    public detail?: string
   ) {
     super(message)
     this.name = 'ApiError'
@@ -21,9 +25,9 @@ async function requestJson<T>(
     headers: { ...(init.body === undefined ? {} : { 'content-type': 'application/json' }), ...init.headers },
     body: init.body === undefined ? undefined : JSON.stringify(init.body),
   })
-  const data = (await res.json().catch(() => ({}))) as T & { error?: string; errorDescription?: string }
+  const data = (await res.json().catch(() => ({}))) as T & { error?: string; errorDescription?: string; message?: string }
   if (!res.ok) {
-    throw new ApiError(data.errorDescription ?? data.error ?? `Request failed: ${path} (${res.status})`, res.status)
+    throw new ApiError(data.errorDescription ?? data.error ?? `Request failed: ${path} (${res.status})`, res.status, data.message)
   }
   return data
 }
