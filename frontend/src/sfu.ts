@@ -1264,10 +1264,16 @@ export class SFUClient {
   // UNCAPPED_RETRY_DELAYS_MS mientras ese track siga publicado por la misma
   // sesión, sin bloquear join().
   private retryUncappedLater(items: SubscriptionItem[], attempt: number): void {
-    const delay = UNCAPPED_RETRY_DELAYS_MS[attempt]
-    if (delay === undefined) {
-      console.warn('[sfu] sin suscripción después de varios intentos:', items.map((i) => i.trackName))
-      return
+    // Semana 4 (prueba con 16): al agotar la escalera se sigue reintentando con
+    // la última espera, en vez de rendirse. Cloudflare puede responder
+    // not_found_track_error a TODOS los suscriptores de un audio que sí se está
+    // publicando (su video, de la misma sesión, sí llega); rendirse dejaba a esa
+    // persona muda el resto de la reunión. Se reintenta mientras siga publicando
+    // ese track y esta conexión siga viva.
+    const ultima = UNCAPPED_RETRY_DELAYS_MS[UNCAPPED_RETRY_DELAYS_MS.length - 1]
+    const delay = UNCAPPED_RETRY_DELAYS_MS[attempt] ?? ultima
+    if (attempt === UNCAPPED_RETRY_DELAYS_MS.length) {
+      console.warn(`[sfu] sin suscripción después de varios intentos; se sigue reintentando cada ${Math.round(ultima / 1000)} s: ${items.map((i) => i.trackName).join(', ')}`)
     }
     const pending = () =>
       items.filter((i) => this.knownTracks.get(i.trackName)?.sessionId === i.sessionId && !this.trackNameToMid.has(i.trackName))

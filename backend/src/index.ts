@@ -63,9 +63,9 @@ function publicRoom(room: db.Room) {
     nombre: room.nombre,
     estado: room.estado,
     tipo: room.tipo,
-    parent_room_id: room.parent_room_id,
-    creada_en: room.creada_en,
-    cerrada_en: room.cerrada_en,
+    parentRoomId: room.parent_room_id,
+    creadaEn: room.creada_en,
+    cerradaEn: room.cerrada_en,
   }
 }
 
@@ -172,7 +172,8 @@ app.get('/api/rooms/:roomId', async (c) => {
   const roomId = c.req.param('roomId')
   const room = await db.getRoom(c.env.DB, roomId)
   if (!room) return c.json({ error: 'sala no encontrada' }, 404)
-  return c.json({ id: room.id, nombre: room.nombre, estado: room.estado, tipo: room.tipo, parentRoomId: room.parent_room_id })
+  // Misma forma que en el resto de la API (ver publicRoom).
+  return c.json(publicRoom(room))
 })
 
 // Semana 4: cerrar exige la llave de host en las salas que la tienen. Cerrar

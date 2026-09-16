@@ -68,7 +68,8 @@ y una sala cerrada con su subsala. Sin las variables corre contra local, como la
   suscripciones de cada pestaña alrededor del error, y los avisos `[sfu]` de la app.
 - En 2 de 7 corridas de `grid-16`, Cloudflare respondió `not_found_track_error` durante más
   de un minuto para el audio de un participante que sí estaba publicando (su video sí
-  llegaba, en la misma sesión), y los demás dejaron de reintentar a los 45 s. Esa persona
-  queda muda el resto de la reunión. No se encontró la causa. Cuando vuelva a pasar, el
+  llegaba, en la misma sesión), y los demás se rendían a los 45 s, con lo que esa persona
+  quedaba muda el resto de la reunión. Desde entonces el cliente sigue reintentando cada
+  15 s mientras esa persona siga publicando. No se encontró la causa. Cuando vuelva a pasar, el
   arnés le pregunta a Cloudflare qué tracks tiene esa sesión y lo imprime como
   `[diagnóstico]`: eso separa "el track no existe" de "existe y no se puede jalar".

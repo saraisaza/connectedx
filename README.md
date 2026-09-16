@@ -295,7 +295,9 @@ Comentadas también en el código; acá el resumen.
 - **Cloudflare puede devolver 200 con errores por track** (`not_found_track_error` mientras
   el publicador todavía no manda paquetes). La reserva de cupo se corrige contra el
   resultado real, track por track, y el cliente reintenta: el video 3 veces cada 700 ms, y
-  el audio y la pantalla en segundo plano durante unos 45 s.
+  el audio y la pantalla en segundo plano con esperas crecientes. Al agotarlas siguen
+  reintentando cada 15 s mientras esa persona siga publicando ese track: rendirse dejaba a
+  alguien mudo el resto de la reunión (visto en la prueba de 16 participantes).
 - **Active speaker medido en el navegador**: Cloudflare no reenvía la extensión
   `ssrc-audio-level`, así que el nivel se mide con un `AnalyserNode` por participante. Cada
   participante remoto suena por su propio `<audio>`: Chromium no decodifica un track WebRTC
