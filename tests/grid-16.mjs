@@ -41,6 +41,33 @@ const API = 'http://localhost:8787';
 const OUT_DIR = new URL('./resultados/', import.meta.url);
 const args = ['--no-sandbox', '--autoplay-policy=no-user-gesture-required', ...(FAKE_AUDIO_OUT ? ['--disable-audio-output'] : [])];
 
+// Sesión SFU de cada pestaña, para poder preguntarle a Cloudflare qué tracks
+// tiene cuando su audio no le llega a nadie.
+const sesionDe = {};
+
+// Distingue dos cosas muy distintas: que el track no exista en esa sesión, o
+// que exista y no se pueda jalar. Lee las credenciales del repo; el secreto no
+// se imprime, solo la respuesta.
+async function estadoDeSesion(sessionId) {
+  try {
+    const toml = fs.readFileSync(new URL('../backend/wrangler.toml', import.meta.url), 'utf8');
+    const vars = fs.readFileSync(new URL('../backend/.dev.vars', import.meta.url), 'utf8');
+    const appId = toml.match(/CALLS_APP_ID\s*=\s*"([^"]+)"/)?.[1];
+    const base = toml.match(/CALLS_API_BASE_URL\s*=\s*"([^"]+)"/)?.[1];
+    const secret = vars.match(/^CALLS_APP_SECRET=(.+)$/m)?.[1]?.trim();
+    if (!appId || !base || !secret) return 'faltan credenciales locales';
+    const r = await fetch(`${base}/apps/${appId}/sessions/${sessionId}`, { headers: { Authorization: `Bearer ${secret}` } });
+    const j = await r.json().catch(() => null);
+    if (!r.ok) return `HTTP ${r.status} ${JSON.stringify(j).slice(0, 160)}`;
+    const tracks = j?.tracks ?? [];
+    return tracks.length
+      ? tracks.map((t) => `${trackOwner(t.trackName)} ${t.location ?? ''} mid=${t.mid ?? '-'} status=${t.status ?? '-'}${t.errorCode ? ' ' + t.errorCode : ''}`).join(' | ')
+      : `sin tracks: ${JSON.stringify(j).slice(0, 200)}`;
+  } catch (e) {
+    return `no se pudo consultar: ${e.message}`;
+  }
+}
+
 function initScript(label) {
   return `
   (() => {
@@ -186,6 +213,11 @@ async function join(browser, link, nombre, correo) {
             if (t.mid && t.trackName) map.set(String(t.mid), t.trackName);
             if (t.errorCode || !t.mid) tl('subscribe-track-error', `${trackOwner(t.trackName)} ${t.errorCode ?? 'sin mid'}`);
           }
+        } catch {}
+      } else if (path.endsWith('/sfu/session')) {
+        try {
+          const j = await res.json();
+          if (j.sessionId) sesionDe[nombre] = j.sessionId;
         } catch {}
       } else if (path.endsWith('/sfu/publish')) {
         try {
@@ -483,6 +515,13 @@ async function main() {
     results.checks.audioDeTodos = missingAudio.length === 0;
     results.checks.capVideoSteady = overCap.length === 0;
     console.log(`[2] el audio de los ${N_PUB} llega a cada uno de los ${N_TOTAL}:`, missingAudio.length === 0 ? 'PASS' : `FAIL -> ${missingAudio.join(' | ')}`);
+    if (missingAudio.length > 0) {
+      // A quien no se escucha: qué dice Cloudflare de su sesión en ese momento.
+      for (const quien of [...new Set(Object.values(perPage).flatMap((v) => v.missing))]) {
+        const sid = sesionDe[quien];
+        console.log(`  [diagnóstico] sesión SFU de ${quien} (${sid ?? 'no capturada'}): ${sid ? await estadoDeSesion(sid) : 'sin sessionId'}`);
+      }
+    }
     console.log('[3] nadie tiene más de 10 videos fluyendo:', overCap.length === 0 ? 'PASS' : `FAIL -> ${overCap.join(' ')}`);
 
     if (SPEAKER_PROBE) {

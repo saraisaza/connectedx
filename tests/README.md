@@ -66,6 +66,9 @@ y una sala cerrada con su subsala. Sin las variables corre contra local, como la
 - Las carreras de los cambios de sala no aparecen en todas las corridas: conviene correr
   `e2e` varias veces seguidas. Cuando algo falla, imprime la señalización y las
   suscripciones de cada pestaña alrededor del error, y los avisos `[sfu]` de la app.
-- En una corrida de `grid-16`, Cloudflare respondió `not_found_track_error` durante más de
-  un minuto para el audio de un participante que sí estaba publicando, y los demás dejaron
-  de reintentar a los 45 s. No se repitió en la corrida siguiente ni se encontró la causa.
+- En 2 de 7 corridas de `grid-16`, Cloudflare respondió `not_found_track_error` durante más
+  de un minuto para el audio de un participante que sí estaba publicando (su video sí
+  llegaba, en la misma sesión), y los demás dejaron de reintentar a los 45 s. Esa persona
+  queda muda el resto de la reunión. No se encontró la causa. Cuando vuelva a pasar, el
+  arnés le pregunta a Cloudflare qué tracks tiene esa sesión y lo imprime como
+  `[diagnóstico]`: eso separa "el track no existe" de "existe y no se puede jalar".
