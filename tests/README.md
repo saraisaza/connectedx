@@ -14,6 +14,10 @@ audio de oscilador) y, en `subsalas-alarma.mjs`, la pérdida de avisos entre sal
    cd frontend && npm run dev                               # http://localhost:5173
    ```
 
+   `backend/.dev.vars` tiene que incluir `FRONTEND_BASE_URL=http://localhost:5173`: las
+   pruebas abren el `link` que devuelve la API, y en `wrangler.toml` ese valor es el del
+   dominio de producción.
+
 2. Dependencias de las pruebas:
 
    ```bash

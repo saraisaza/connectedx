@@ -3,6 +3,13 @@ main = "src/index.ts"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 
+# El Worker se sirve en su propio subdominio y el frontend en el dominio raíz
+# (https://connectedx.dpdns.org). wrangler crea el registro DNS de este custom
+# domain al desplegar, siempre que la zona esté en la misma cuenta.
+routes = [
+  { pattern = "api.connectedx.dpdns.org", custom_domain = true }
+]
+
 # ---------------------------------------------------------------------------
 # Durable Objects: un RoomSession por sala activa (id de sala = id del DO,
 # vía idFromName). Ver src/roomSession.ts.
@@ -47,8 +54,10 @@ CALLS_APP_ID = "638729c3a45f4ce829ea0ae328ef4e1d"
 CALLS_API_BASE_URL = "https://rtc.live.cloudflare.com/v1"
 MAX_ACTIVE_ROOMS = "7"
 # Origen del frontend: se usa para armar el link de sala que devuelve
-# POST /api/rooms. Cambiar al dominio real antes de deployar a producción.
-FRONTEND_BASE_URL = "http://localhost:5173"
+# POST /api/rooms. Este es el de producción; en desarrollo local lo pisa
+# backend/.dev.vars con http://localhost:5173 (ver README), así los links que
+# devuelve wrangler dev siguen apuntando al frontend local.
+FRONTEND_BASE_URL = "https://connectedx.dpdns.org"
 # Máximo de tracks de VIDEO simultáneos que un cliente puede tener suscritos
 # (modelo Meet: hasta 10 cuadritos visibles). No aplica a audio -- el audio
 # de todos los participantes siempre llega, sin capar (lo necesita el active

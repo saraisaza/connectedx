@@ -46,6 +46,8 @@ simulcast, pantalla compartida, modo solo audio, reconexión y subsalas.
    # Opcionales: si faltan, el backend usa el STUN público de Cloudflare
    TURN_TOKEN_ID=<id del TURN Token>
    TURN_TOKEN_SECRET=<secreto del TURN Token>
+   # Para que los links de sala apunten al frontend local y no al de producción
+   FRONTEND_BASE_URL=http://localhost:5173
    ```
 
    Para producción:
@@ -88,7 +90,7 @@ Lo que no es secreto está en `[vars]`, en `backend/wrangler.toml`:
 | Variable | Valor | Para qué |
 |---|---|---|
 | `CALLS_APP_ID`, `CALLS_API_BASE_URL` | | La App de Cloudflare Realtime |
-| `FRONTEND_BASE_URL` | `http://localhost:5173` | Origen de los links que devuelve `POST /api/rooms`. Cámbialo antes de desplegar |
+| `FRONTEND_BASE_URL` | `https://connectedx.dpdns.org` | Origen de los links que devuelve `POST /api/rooms`. En local lo pisa `backend/.dev.vars` con `http://localhost:5173` |
 | `MAX_ACTIVE_ROOMS` | `7` | Salas principales activas a la vez; las subsalas no cuentan |
 | `MAX_VISIBLE_TILES` | `10` | Videos suscritos por cliente; el audio no tiene tope |
 | `SIMULCAST_LOW_HEIGHT`, `SIMULCAST_LOW_MAX_BITRATE_BPS`, `SIMULCAST_HIGH_HEIGHT`, `SIMULCAST_HIGH_MAX_BITRATE_BPS` | `180`, `150000`, `720`, `1500000` | Las dos capas de video |
@@ -112,7 +114,9 @@ npm run dev        # vite, http://localhost:5173
 ```
 
 Si cambias el puerto del backend, define `VITE_API_BASE` en `frontend/.env.local`
-(por defecto apunta a `http://localhost:8787`).
+(por defecto apunta a `http://localhost:8787`; `frontend/.env.production` solo se usa al
+construir). Los links de sala que devuelve la API salen de `FRONTEND_BASE_URL`: en local
+lo pisa `backend/.dev.vars`, así apuntan a `http://localhost:5173`.
 
 ## 3. Probar a mano
 
@@ -348,21 +352,25 @@ cambios de sala.
 
 ## 7. Desplegar
 
+El Worker se sirve en `https://api.connectedx.dpdns.org` (custom domain declarado en
+`routes`, en `backend/wrangler.toml`) y el frontend en `https://connectedx.dpdns.org`.
+
 ```bash
 cd backend
 npm run db:migrate:remote   # primero la base: el Worker nuevo necesita las migraciones
-npm run deploy
+npm run deploy              # la primera vez crea el registro DNS del custom domain
 ```
 
-- Antes de desplegar, cambia `FRONTEND_BASE_URL` en `wrangler.toml` al dominio real del
-  frontend: con él se arman `link` y `hostLink`.
-- Los secretos de producción se cargan con `wrangler secret put` (ver 1.1).
-- El frontend es estático. Constrúyelo apuntando al Worker desplegado y sirve
-  `frontend/dist` desde cualquier hosting estático:
+- La zona `connectedx.dpdns.org` tiene que estar en la misma cuenta de Cloudflare que el
+  Worker; si no, el despliegue falla al crear el custom domain.
+- Los secretos de producción se cargan con `wrangler secret put` (ver 1.1). Son los mismos
+  que en `.dev.vars`, sin `FRONTEND_BASE_URL`: ese valor ya está en `wrangler.toml`.
+- El frontend es estático y `frontend/.env.production` ya apunta a la API, así que alcanza
+  con construirlo y servir `frontend/dist` en el dominio raíz:
 
   ```bash
   cd frontend
-  VITE_API_BASE=https://meets-backend.<tu-subdominio>.workers.dev npm run build
+  npm run build
   ```
 
 La migración `0003_subsalas.sql` solo agrega columnas opcionales y una tabla: se puede
