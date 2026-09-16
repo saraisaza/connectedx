@@ -7,7 +7,8 @@
     "e2e": "node subsalas-e2e.mjs",
     "alarma": "node subsalas-alarma.mjs",
     "reconexion": "node reconexion-audio.mjs",
-    "grid-16": "N_BROWSERS=2 node grid-16.mjs"
+    "grid-16": "N_BROWSERS=2 node grid-16.mjs",
+    "verificacion": "node verificacion-despliegue.mjs"
   },
   "devDependencies": {
     "playwright": "1.62.1"

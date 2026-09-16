@@ -38,9 +38,20 @@ límite de 7 salas activas, así que conviene correr las pruebas de a una.
 | `npm run alarma` | La alarma de reconciliación corrige tres avisos perdidos: un movimiento, una fila de asistencia huérfana y el cierre de una subsala. Provoca la pérdida escribiendo directo en la D1 **local**. | 1 min |
 | `npm run reconexion` | Quien se reconecta vuelve a escucharse y a escuchar a los demás, medido en la app: el borde de "hablando" y los `<audio>` que suenan. | 30 s |
 | `npm run grid-16` | 16 participantes: paginación real, nunca más de 10 videos, el audio de los 15 llega a los 16 y quien habla sube a la página visible. Deja un resumen en `resultados/`. | 5 min |
+| `npm run verificacion` | Dos navegadores contra un despliegue: entrar, crear una subsala, moverse, escucharse dentro de ella, cerrarla y terminar la reunión. | 2 min |
 
 Resultados de referencia, en una sola laptop, el 14 de septiembre de 2026: 40/40, 19/19 en
 seis corridas seguidas, 10/10, 7/7 y 10/10.
+
+`verificacion` es la única pensada para correr contra un despliegue, y se apunta con dos
+variables:
+
+```bash
+API_BASE=https://api.connectedx.dpdns.org APP_BASE=https://connectedx.dpdns.org npm run verificacion
+```
+
+Deja datos reales en esa base: dos usuarios (`@verificacion.test`), sus filas de asistencia
+y una sala cerrada con su subsala. Sin las variables corre contra local, como las demás.
 
 ## Cuidados
 
