@@ -363,6 +363,9 @@ npm run deploy              # la primera vez crea el registro DNS del custom dom
 
 - La zona `connectedx.dpdns.org` tiene que estar en la misma cuenta de Cloudflare que el
   Worker; si no, el despliegue falla al crear el custom domain.
+- Si es el primer Worker de la cuenta, Cloudflare no acepta el despliegue hasta que exista
+  el subdominio `*.workers.dev` ("You need a workers.dev subdomain in order to proceed").
+  Se registra abriendo una vez **Workers & Pages** en el dashboard y eligiendo el nombre.
 - Los secretos de producción se cargan con `wrangler secret put` (ver 1.1). Son los mismos
   que en `.dev.vars`, sin `FRONTEND_BASE_URL`: ese valor ya está en `wrangler.toml`.
 - El frontend es estático y `frontend/.env.production` ya apunta a la API. Se sirve con
