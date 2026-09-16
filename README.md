@@ -365,13 +365,29 @@ npm run deploy              # la primera vez crea el registro DNS del custom dom
   Worker; si no, el despliegue falla al crear el custom domain.
 - Los secretos de producción se cargan con `wrangler secret put` (ver 1.1). Son los mismos
   que en `.dev.vars`, sin `FRONTEND_BASE_URL`: ese valor ya está en `wrangler.toml`.
-- El frontend es estático y `frontend/.env.production` ya apunta a la API, así que alcanza
-  con construirlo y servir `frontend/dist` en el dominio raíz:
+- El frontend es estático y `frontend/.env.production` ya apunta a la API. Se sirve con
+  Cloudflare Pages, en el proyecto `meets-frontend`:
 
   ```bash
   cd frontend
   npm run build
+  ../backend/node_modules/.bin/wrangler pages deploy dist --project-name meets-frontend
   ```
+
+  Se usa el binario del repo por ruta: los comandos `pages` no toleran el `wrangler.toml`
+  del Worker en la carpeta actual, y `npx wrangler` desde `frontend/` descargaría otra
+  versión.
+
+  `frontend/public/_redirects` manda cualquier ruta a `index.html`. Sin eso, abrir el link
+  de una sala (`/r/<roomId>`) daría 404 en Pages.
+
+  El dominio raíz se agrega una sola vez y a mano, porque `wrangler` no tiene comando para
+  eso: dashboard → Workers & Pages → `meets-frontend` → Custom domains → Set up a custom
+  domain → `connectedx.dpdns.org`. Mientras no se agregue, el sitio vive en
+  `https://meets-frontend.pages.dev`.
+
+  La app necesita el backend desplegado: hasta entonces carga, pero el registro y el video
+  fallan.
 
 La migración `0003_subsalas.sql` solo agrega columnas opcionales y una tabla: se puede
 aplicar antes de desplegar el Worker nuevo sin afectar al que está corriendo.

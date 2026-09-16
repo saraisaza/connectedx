@@ -1,0 +1,3 @@
+# La app resuelve /r/<roomId> en el navegador: Pages tiene que servir index.html
+# en cualquier ruta, en vez de responder 404.
+/*    /index.html   200
